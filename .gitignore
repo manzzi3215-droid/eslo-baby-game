@@ -1,0 +1,11 @@
+# OS / 에디터 임시 파일
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 로컬 프리뷰 서버 설정(배포에 불필요)
+.claude/
+
+# 의존성/빌드 산출물 (현재는 없음, 향후 대비)
+node_modules/
+dist/

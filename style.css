@@ -1,0 +1,656 @@
+/* =====================================================================
+   이슬로 베이비 버블 클린 - style.css
+   파스텔 블루 / 화이트 / 민트 톤, 태블릿 가로 모드 최적화
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   디자인 토큰 (색상/그림자/반경) : 한 곳에서 브랜드 톤을 관리합니다.
+--------------------------------------------------------------------- */
+:root {
+  --c-sky:        #d8efff;   /* 파스텔 블루(밝은) */
+  --c-sky-2:      #bfe3ff;   /* 파스텔 블루(진한) */
+  --c-mint:       #c9f3e6;   /* 민트 */
+  --c-mint-2:     #9fe6d2;
+  --c-white:      #ffffff;
+  --c-ink:        #3a5a73;   /* 텍스트(부드러운 네이비) */
+  --c-ink-soft:   #6f8aa3;
+  --c-brand:      #5b7fd6;   /* eslo 브랜드 블루 */
+  --c-brand-deep: #3f63bb;
+  --c-accent:     #ff9bb3;   /* 포인트 핑크 */
+  --c-warn:       #ff6b6b;   /* 타이머 경고 */
+
+  --shadow-soft:  0 10px 30px rgba(91, 127, 214, 0.18);
+  --shadow-pop:   0 6px 18px rgba(91, 127, 214, 0.28);
+
+  --r-lg: 32px;
+  --r-md: 22px;
+  --r-sm: 14px;
+
+  --font: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------------
+   리셋 & 키오스크용 전역 설정
+--------------------------------------------------------------------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;                 /* 행사장 스크롤 방지 */
+  background: var(--c-sky);
+  font-family: var(--font);
+  color: var(--c-ink);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;               /* 터치 제스처(스크롤/줌) 차단 → 드래그 전용 */
+  overscroll-behavior: none;
+}
+
+.app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;                   /* 모바일 주소창 대응 */
+  overflow: hidden;
+}
+
+img { -webkit-user-drag: none; user-drag: none; }
+
+/* =====================================================================
+   플레이 영역
+   ===================================================================== */
+.playfield {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------
+   욕실 배경 (순수 CSS)
+--------------------------------------------------------------------- */
+.bathroom { position: absolute; inset: 0; z-index: 0; }
+
+.bathroom__tiles {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, #eaf7ff 0%, #d8efff 55%, #c9ecff 100%);
+}
+/* 은은한 타일 격자 */
+.bathroom__tiles::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.55) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.55) 2px, transparent 2px);
+  background-size: 64px 64px;
+  opacity: 0.45;
+}
+
+/* 창문 + 구름 */
+.bathroom__window {
+  position: absolute;
+  top: 7%;
+  left: 6%;
+  width: 168px;
+  height: 132px;
+  background: linear-gradient(180deg, #bfe6ff, #e8f7ff);
+  border: 10px solid #fff;
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+.bathroom__cloud {
+  position: absolute;
+  background: #fff;
+  border-radius: 50px;
+  opacity: 0.9;
+}
+.bathroom__cloud--1 { width: 70px; height: 24px; top: 30px; left: -30px; animation: drift 14s linear infinite; }
+.bathroom__cloud--2 { width: 50px; height: 18px; top: 70px; left: -30px; animation: drift 20s linear infinite; }
+@keyframes drift { from { transform: translateX(0); } to { transform: translateX(240px); } }
+
+/* 선반 + 소품 */
+.bathroom__shelf {
+  position: absolute;
+  top: 9%;
+  right: 6%;
+  width: 190px;
+  height: 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+}
+.bathroom__bottle { position: absolute; bottom: 14px; width: 26px; height: 48px; border-radius: 8px 8px 4px 4px; }
+.bathroom__bottle--a { left: 28px; background: var(--c-mint-2); }
+.bathroom__bottle--b { left: 64px; height: 60px; background: var(--c-accent); }
+.bathroom__duck { position: absolute; right: 18px; bottom: 10px; font-size: 30px; }
+
+/* 욕조(아랫부분) */
+.bathroom__tub {
+  position: absolute;
+  left: 50%;
+  bottom: -4%;
+  transform: translateX(-50%);
+  width: 118%;
+  height: 34%;
+  background: linear-gradient(180deg, #eafaff 0%, #cdeeff 100%);
+  border-radius: 50% 50% 0 0 / 30% 30% 0 0;
+  box-shadow: inset 0 6px 20px rgba(255, 255, 255, 0.8);
+}
+.bathroom__foamline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26%;
+  height: 40px;
+  background:
+    radial-gradient(circle at 10% 50%, #fff 14px, transparent 15px),
+    radial-gradient(circle at 25% 60%, #fff 18px, transparent 19px),
+    radial-gradient(circle at 40% 45%, #fff 16px, transparent 17px),
+    radial-gradient(circle at 55% 60%, #fff 20px, transparent 21px),
+    radial-gradient(circle at 70% 48%, #fff 16px, transparent 17px),
+    radial-gradient(circle at 85% 58%, #fff 18px, transparent 19px),
+    radial-gradient(circle at 96% 50%, #fff 14px, transparent 15px);
+  opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------------
+   아기 컨테이너 + 계면이 레이어
+--------------------------------------------------------------------- */
+.baby-container {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -48%);
+  width: min(42vh, 360px);
+  aspect-ratio: 300 / 360;
+  z-index: 1;
+}
+.baby {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 12px 24px rgba(91, 127, 214, 0.22));
+  animation: babyBob 3.4s ease-in-out infinite;
+}
+@keyframes babyBob {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50%      { transform: translateY(-8px) rotate(1deg); }
+}
+
+/* 클린 완료 시 반짝이는 상태 */
+.baby__glow { opacity: 0; transition: opacity 0.6s ease; }
+.baby-container.is-shiny .baby__glow { opacity: 1; animation: glowPulse 1.6s ease-in-out infinite; }
+@keyframes glowPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+.gyemyeon-layer { position: absolute; inset: 0; pointer-events: none; }
+
+/* ---------------------------------------------------------------------
+   계면이 캐릭터
+--------------------------------------------------------------------- */
+.gyemyeon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 64px;
+  height: 64px;
+  margin-left: -32px;     /* 중심 정렬 */
+  margin-top: -32px;
+  will-change: transform;
+  transform-origin: center bottom;
+}
+.gyemyeon__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.18));
+}
+
+/* 살짝 통통 튀는 기본 모션(좌우/상하 미세) */
+.gyemyeon.is-idle .gyemyeon__img { animation: gyHop 0.9s ease-in-out infinite; }
+@keyframes gyHop {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  30%      { transform: translateY(-7px) scaleY(1.05); }
+  60%      { transform: translateY(0) scaleY(0.95); }
+}
+
+/* 거품에 닿아 놀람 */
+.gyemyeon.is-surprised .gyemyeon__img { animation: gyShake 0.35s ease; }
+@keyframes gyShake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  25% { transform: translateX(-4px) rotate(-6deg); }
+  75% { transform: translateX(4px) rotate(6deg); }
+}
+
+/* 울먹임(체력 낮음) */
+.gyemyeon.is-crying .gyemyeon__img { animation: gyCry 0.5s ease-in-out infinite; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.18)) saturate(0.8); }
+@keyframes gyCry {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-2px, 1px); }
+  75% { transform: translate(2px, 1px); }
+}
+
+/* 펑! 사라짐 */
+.gyemyeon.is-popping { animation: gyPop 0.36s ease forwards; }
+@keyframes gyPop {
+  0%   { transform: scale(1); opacity: 1; }
+  35%  { transform: scale(1.25); opacity: 0.9; }
+  100% { transform: scale(0.1); opacity: 0; }
+}
+
+/* 말풍선 */
+.speech {
+  position: absolute;
+  left: 0; top: 0;
+  transform: translate(-50%, -120%);
+  padding: 6px 12px;
+  background: #fff;
+  color: var(--c-ink);
+  font-weight: 800;
+  font-size: clamp(13px, 2vh, 18px);
+  border-radius: 14px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  animation: speechPop 0.9s ease forwards;
+  z-index: 5;
+}
+.speech::after {
+  content: "";
+  position: absolute;
+  left: 50%; bottom: -7px;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: #fff;
+}
+@keyframes speechPop {
+  0%   { transform: translate(-50%, -90%) scale(0.4); opacity: 0; }
+  25%  { transform: translate(-50%, -120%) scale(1.1); opacity: 1; }
+  70%  { transform: translate(-50%, -140%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -170%) scale(0.95); opacity: 0; }
+}
+
+/* ---------------------------------------------------------------------
+   이펙트 캔버스 / 도구 커서
+--------------------------------------------------------------------- */
+.fx-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;          /* canvas는 intrinsic 크기(300x150)를 가지므로 명시적으로 100% 지정 */
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.tool-cursor {
+  position: absolute;
+  left: 0; top: 0;
+  z-index: 4;
+  width: 120px;
+  height: 120px;
+  margin-left: -60px;
+  margin-top: -60px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  will-change: transform;
+}
+.tool-cursor.is-active { opacity: 1; }
+
+/* 도구별 모양: 제품 */
+.tool-cursor--bottle {
+  background: center / contain no-repeat url("assets/eslo-baby-bath-shampoo.png");
+  filter: drop-shadow(0 8px 14px rgba(91, 127, 214, 0.35));
+  transform: rotate(18deg);
+}
+/* 도구별 모양: 샤워기 (CSS) */
+.tool-cursor--shower {
+  background:
+    radial-gradient(circle at 50% 30%, #dfe9ff 0 26px, transparent 27px);
+}
+.tool-cursor--shower::before {
+  content: "🚿";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 64px;
+  filter: drop-shadow(0 6px 10px rgba(91, 127, 214, 0.35));
+}
+/* 도구별 모양: 수건 (CSS) */
+.tool-cursor--towel {
+  background: linear-gradient(135deg, #fff 0%, #eaf6ff 100%);
+  border: 6px solid #d6ecff;
+  border-radius: 18px;
+  box-shadow: var(--shadow-pop), inset 0 0 0 6px rgba(255,255,255,0.6);
+}
+.tool-cursor--towel::after {
+  content: "";
+  position: absolute;
+  left: 16px; right: 16px; top: 50%;
+  height: 4px;
+  background: repeating-linear-gradient(90deg, #cfe7ff 0 12px, transparent 12px 24px);
+}
+
+/* =====================================================================
+   상단 HUD
+   ===================================================================== */
+.hud {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 6;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0));
+  pointer-events: none;
+}
+.hud__item {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: var(--r-md);
+  padding: 8px 16px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.hud__item--gauge { flex: 1; }
+.hud__label {
+  font-size: clamp(11px, 1.6vh, 14px);
+  font-weight: 700;
+  color: var(--c-ink-soft);
+  letter-spacing: 0.02em;
+}
+.hud__value { font-size: clamp(16px, 2.6vh, 24px); font-weight: 800; color: var(--c-ink); }
+.hud__value b { color: var(--c-brand); }
+
+.hud__item--timer .hud__value b { color: var(--c-brand); transition: color 0.3s; }
+.hud.is-hurry .hud__item--timer { animation: hurry 0.7s ease-in-out infinite; }
+.hud.is-hurry .hud__item--timer .hud__value b { color: var(--c-warn); }
+@keyframes hurry { 0%,100% { transform: scale(1);} 50% { transform: scale(1.06);} }
+
+.gauge {
+  margin-top: 6px;
+  height: 16px;
+  background: #e7f1fb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.gauge__fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--c-mint-2), var(--c-brand));
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+/* =====================================================================
+   하단 제품 독
+   ===================================================================== */
+.product-dock {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0 10px;
+  pointer-events: none;
+}
+.product-dock__img {
+  height: clamp(96px, 20vh, 168px);
+  filter: drop-shadow(0 10px 18px rgba(91, 127, 214, 0.3));
+  animation: dockFloat 2.6s ease-in-out infinite;
+  pointer-events: auto;
+  cursor: grab;
+}
+@keyframes dockFloat { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-8px);} }
+.product-dock__hint {
+  font-size: clamp(13px, 2vh, 18px);
+  font-weight: 800;
+  color: var(--c-brand);
+  background: rgba(255,255,255,0.85);
+  padding: 6px 16px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-soft);
+}
+/* 미션에 따라 독 숨김 처리 */
+.product-dock.is-hidden { opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+
+/* =====================================================================
+   미션 토스트 (중앙 큰 안내)
+   ===================================================================== */
+.mission-toast {
+  position: absolute;
+  left: 50%; top: 42%;
+  transform: translate(-50%, -50%) scale(0.7);
+  z-index: 8;
+  padding: 22px 40px;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  max-width: 80%;
+}
+.mission-toast.is-show { animation: toastShow 1.8s ease forwards; }
+.mission-toast__big { font-size: clamp(26px, 5vh, 44px); font-weight: 900; color: var(--c-brand); }
+.mission-toast__sub { margin-top: 6px; font-size: clamp(15px, 2.6vh, 22px); font-weight: 700; color: var(--c-ink); }
+@keyframes toastShow {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  30%  { transform: translate(-50%, -50%) scale(1); }
+  80%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+}
+
+/* =====================================================================
+   화면(시작/성공/실패) 오버레이
+   ===================================================================== */
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(160deg, rgba(216, 239, 255, 0.96), rgba(201, 243, 230, 0.96));
+  backdrop-filter: blur(2px);
+}
+.screen.is-active { display: flex; animation: fadeIn 0.4s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.screen__card {
+  width: min(620px, 92%);
+  background: #fff;
+  border-radius: var(--r-lg);
+  padding: clamp(28px, 5vh, 52px);
+  text-align: center;
+  box-shadow: var(--shadow-pop);
+  animation: cardPop 0.5s cubic-bezier(0.2, 1.2, 0.3, 1) both;
+}
+@keyframes cardPop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.screen__emoji { font-size: clamp(40px, 8vh, 72px); line-height: 1; }
+.screen__title {
+  margin-top: 8px;
+  font-size: clamp(28px, 5.4vh, 48px);
+  font-weight: 900;
+  color: var(--c-brand);
+  letter-spacing: -0.01em;
+}
+.screen__desc { margin-top: 14px; font-size: clamp(16px, 2.8vh, 22px); line-height: 1.6; color: var(--c-ink); }
+.screen__desc b { color: var(--c-brand-deep); }
+.screen__sub { margin-top: 14px; font-size: clamp(13px, 2vh, 16px); color: var(--c-ink-soft); }
+.screen__staff {
+  margin-top: 18px;
+  font-size: clamp(15px, 2.4vh, 20px);
+  font-weight: 800;
+  color: var(--c-brand);
+  background: var(--c-mint);
+  display: inline-block;
+  padding: 10px 20px;
+  border-radius: 999px;
+}
+
+/* ---------------------------------------------------------------------
+   버튼 (크고 둥글게)
+--------------------------------------------------------------------- */
+.btn {
+  display: inline-block;
+  margin-top: 26px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: linear-gradient(180deg, var(--c-brand), var(--c-brand-deep));
+  padding: clamp(16px, 3vh, 24px) clamp(40px, 8vw, 80px);
+  font-size: clamp(20px, 3.4vh, 30px);
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: scale(0.94); box-shadow: 0 3px 10px rgba(91,127,214,0.3); }
+.btn--primary { animation: btnBreath 2.2s ease-in-out infinite; }
+@keyframes btnBreath {
+  0%,100% { box-shadow: var(--shadow-pop); }
+  50%     { box-shadow: 0 8px 26px rgba(91, 127, 214, 0.5); }
+}
+
+/* =====================================================================
+   가로 모드 안내 (세로일 때만 노출)
+   ===================================================================== */
+.orientation-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 99;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--c-sky);
+  text-align: center;
+}
+.orientation-hint__icon { font-size: 64px; animation: rotateHint 2s ease-in-out infinite; }
+@keyframes rotateHint { 0%,100% { transform: rotate(0);} 50% { transform: rotate(90deg);} }
+.orientation-hint__text { font-size: 22px; font-weight: 800; color: var(--c-ink); }
+
+/* 세로 + 좁은 화면(태블릿 세로/폰)에서만 안내 노출 */
+@media (orientation: portrait) and (max-width: 900px) {
+  .orientation-hint { display: flex; }
+}
+
+/* =====================================================================
+   손 인식(카메라) UI
+   ===================================================================== */
+
+/* 시작 화면 버튼 그룹 (손/터치 선택) */
+.start-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  margin-top: 22px;
+}
+.start-buttons .btn { margin-top: 0; width: min(420px, 82vw); }
+
+/* 보조(터치) 버튼: 흰 배경 + 테두리 */
+.btn--ghost {
+  background: #fff;
+  color: var(--c-brand);
+  box-shadow: inset 0 0 0 3px var(--c-sky-2), var(--shadow-soft);
+  animation: none;
+}
+.btn--ghost:active { background: var(--c-sky); }
+
+/* 카메라 상태/오류 안내 문구 */
+.cam-notice {
+  margin-top: 14px;
+  min-height: 1.2em;
+  font-weight: 800;
+  font-size: clamp(13px, 2vh, 16px);
+  color: var(--c-warn);
+}
+.cam-notice.is-info { color: var(--c-brand); }
+
+/* 우측 하단 웹캠 미리보기 */
+.cam-preview {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 7;
+  width: clamp(140px, 18vw, 200px);
+  aspect-ratio: 4 / 3;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 4px solid #fff;
+  box-shadow: var(--shadow-pop);
+  background: #1a2a3a;
+  display: none;
+}
+.cam-preview.is-on { display: block; }
+.cam-preview__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);     /* 거울 모드(셀카처럼) */
+}
+/* 인식된 검지 끝 위치 표시 점 */
+.cam-preview__dot {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 18px; height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.cam-preview.is-tracking .cam-preview__dot { opacity: 1; }
+.cam-preview__label {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.55), transparent);
+  padding: 12px 0 4px;
+}
+
+/* 손 미인식 안내 배너 */
+.hand-hint {
+  position: absolute;
+  left: 50%; top: 16%;
+  transform: translateX(-50%);
+  z-index: 7;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--c-brand);
+  font-weight: 800;
+  font-size: clamp(15px, 2.4vh, 20px);
+  padding: 12px 22px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+  display: none;
+}
+.hand-hint.is-show { display: block; animation: handHintPulse 1.2s ease-in-out infinite; }
+@keyframes handHintPulse {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50%      { transform: translateX(-50%) scale(1.06); }
+}
