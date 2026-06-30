@@ -187,60 +187,62 @@ img { -webkit-user-drag: none; user-drag: none; }
 .baby-container.is-shiny .baby__glow { opacity: 1; animation: glowPulse 1.6s ease-in-out infinite; }
 @keyframes glowPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
-.gyemyeon-layer { position: absolute; inset: 0; pointer-events: none; }
+.gyemyeon-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 
 /* ---------------------------------------------------------------------
    계면이 캐릭터
 --------------------------------------------------------------------- */
-.gyemyeon {
+/* 3단 구조: .enemy(위치 translate) > .enemy__inner(좌우반전·크기) > img(상태 애니) */
+.enemy {
   position: absolute;
   left: 0;
   top: 0;
-  width: 64px;
-  height: 64px;
-  margin-left: -32px;     /* 중심 정렬 */
-  margin-top: -32px;
+  width: 66px;
+  height: 66px;
+  margin-left: -33px;     /* 중심 정렬 */
+  margin-top: -33px;
   will-change: transform;
-  transform-origin: center bottom;
+  pointer-events: none;
+  z-index: 3;
 }
-.gyemyeon__img {
+.enemy--boss { width: 92px; height: 92px; margin-left: -46px; margin-top: -46px; }
+.enemy__inner { width: 100%; height: 100%; will-change: transform; }
+.enemy__img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  pointer-events: none;
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.18));
+  filter: drop-shadow(0 5px 6px rgba(0, 0, 0, 0.2));
 }
 
-/* 살짝 통통 튀는 기본 모션(좌우/상하 미세) */
-.gyemyeon.is-idle .gyemyeon__img { animation: gyHop 0.9s ease-in-out infinite; }
-@keyframes gyHop {
+/* 기어다닐 때 살짝 통통 */
+.enemy__img.is-crawl { animation: enemyBob 0.85s ease-in-out infinite; }
+@keyframes enemyBob {
   0%, 100% { transform: translateY(0) scaleY(1); }
-  30%      { transform: translateY(-7px) scaleY(1.05); }
-  60%      { transform: translateY(0) scaleY(0.95); }
+  35%      { transform: translateY(-5px) scaleY(1.04); }
+  70%      { transform: translateY(0) scaleY(0.97); }
 }
 
-/* 거품에 닿아 놀람 */
-.gyemyeon.is-surprised .gyemyeon__img { animation: gyShake 0.35s ease; }
-@keyframes gyShake {
-  0%, 100% { transform: translateX(0) rotate(0); }
-  25% { transform: translateX(-4px) rotate(-6deg); }
-  75% { transform: translateX(4px) rotate(6deg); }
+/* 거품에 맞아 움찔(밝게 번쩍) */
+.enemy__img.is-hurt { animation: enemyHurt 0.25s ease; }
+@keyframes enemyHurt {
+  0%, 100% { filter: drop-shadow(0 5px 6px rgba(0,0,0,0.2)); }
+  50%      { filter: drop-shadow(0 5px 6px rgba(0,0,0,0.2)) brightness(1.7); transform: translateX(-3px); }
 }
 
-/* 울먹임(체력 낮음) */
-.gyemyeon.is-crying .gyemyeon__img { animation: gyCry 0.5s ease-in-out infinite; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.18)) saturate(0.8); }
-@keyframes gyCry {
-  0%, 100% { transform: translate(0, 0); }
-  25% { transform: translate(-2px, 1px); }
-  75% { transform: translate(2px, 1px); }
+/* 씻겨 내려감: 슬픈 표정으로 아래로 흘러내리며 사라짐 */
+.enemy__img.is-washing { animation: enemyWash 0.75s cubic-bezier(0.4, 0, 0.8, 0.4) forwards; }
+@keyframes enemyWash {
+  0%   { transform: translateY(0) rotate(0) scale(1); opacity: 1; }
+  20%  { transform: translateY(4px) rotate(-4deg) scale(1.05); opacity: 1; }
+  100% { transform: translateY(130px) rotate(10deg) scale(0.5); opacity: 0; }
 }
 
-/* 펑! 사라짐 */
-.gyemyeon.is-popping { animation: gyPop 0.36s ease forwards; }
-@keyframes gyPop {
-  0%   { transform: scale(1); opacity: 1; }
-  35%  { transform: scale(1.25); opacity: 0.9; }
-  100% { transform: scale(0.1); opacity: 0; }
+/* 보호막에 튕겨남: 행복한 표정으로 바깥으로 날아가며 사라짐 */
+.enemy__img.is-repelled { animation: enemyRepel 0.8s cubic-bezier(0.2, 0.9, 0.3, 1) forwards; }
+@keyframes enemyRepel {
+  0%   { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; }
+  25%  { transform: translate(0, -14px) scale(1.25); opacity: 1; }
+  100% { transform: translate(var(--fly-x, 220px), -180px) rotate(var(--fly-r, 360deg)) scale(0.3); opacity: 0; }
 }
 
 /* 말풍선 */
@@ -287,55 +289,23 @@ img { -webkit-user-drag: none; user-drag: none; }
   pointer-events: none;
 }
 
+/* 드래그 중 손/포인터를 따라다니는 제품 커서 (배경 이미지는 JS가 미션별로 설정) */
 .tool-cursor {
   position: absolute;
   left: 0; top: 0;
   z-index: 4;
-  width: 120px;
-  height: 120px;
-  margin-left: -60px;
-  margin-top: -60px;
+  width: 110px;
+  height: 110px;
+  margin-left: -55px;
+  margin-top: -55px;
   pointer-events: none;
   opacity: 0;
+  background: center / contain no-repeat;
+  filter: drop-shadow(0 8px 14px rgba(91, 127, 214, 0.35));
   transition: opacity 0.15s ease;
   will-change: transform;
 }
 .tool-cursor.is-active { opacity: 1; }
-
-/* 도구별 모양: 제품 */
-.tool-cursor--bottle {
-  background: center / contain no-repeat url("assets/eslo-baby-bath-shampoo.png");
-  filter: drop-shadow(0 8px 14px rgba(91, 127, 214, 0.35));
-  transform: rotate(18deg);
-}
-/* 도구별 모양: 샤워기 (CSS) */
-.tool-cursor--shower {
-  background:
-    radial-gradient(circle at 50% 30%, #dfe9ff 0 26px, transparent 27px);
-}
-.tool-cursor--shower::before {
-  content: "🚿";
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 64px;
-  filter: drop-shadow(0 6px 10px rgba(91, 127, 214, 0.35));
-}
-/* 도구별 모양: 수건 (CSS) */
-.tool-cursor--towel {
-  background: linear-gradient(135deg, #fff 0%, #eaf6ff 100%);
-  border: 6px solid #d6ecff;
-  border-radius: 18px;
-  box-shadow: var(--shadow-pop), inset 0 0 0 6px rgba(255,255,255,0.6);
-}
-.tool-cursor--towel::after {
-  content: "";
-  position: absolute;
-  left: 16px; right: 16px; top: 50%;
-  height: 4px;
-  background: repeating-linear-gradient(90deg, #cfe7ff 0 12px, transparent 12px 24px);
-}
 
 /* =====================================================================
    상단 HUD
@@ -654,3 +624,54 @@ img { -webkit-user-drag: none; user-drag: none; }
   0%, 100% { transform: translateX(-50%) scale(1); }
   50%      { transform: translateX(-50%) scale(1.06); }
 }
+
+/* =====================================================================
+   로션 보호막 (미션3)
+   ===================================================================== */
+.skin-shield {
+  position: absolute;
+  left: 50%; top: 48%;
+  transform: translate(-50%, -50%);
+  width: 86%;
+  height: 78%;
+  border-radius: 50%;
+  z-index: 2;                 /* 아기 위, 계면이(z3) 아래 */
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(circle at 38% 32%, rgba(255,255,255,0.9) 0 6%, transparent 22%),
+    radial-gradient(circle at 50% 50%, rgba(191,227,255,0.55) 0 55%, rgba(159,230,210,0.35) 72%, transparent 80%);
+  box-shadow: 0 0 40px rgba(150, 205, 255, 0.6) inset;
+  transition: opacity 0.2s ease;
+}
+.skin-shield.is-on { animation: shieldShimmer 2s ease-in-out infinite; }
+@keyframes shieldShimmer {
+  0%, 100% { filter: hue-rotate(0deg) brightness(1); }
+  50%      { filter: hue-rotate(-12deg) brightness(1.18); }
+}
+
+/* =====================================================================
+   엔딩 화면 (GOOD JOB! + 컨페티/폭죽/별)
+   ===================================================================== */
+.ending-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;                 /* 카드 뒤 */
+  pointer-events: none;
+}
+.screen__card--ending { position: relative; z-index: 1; overflow: visible; }
+
+/* 카드 위로 빼꼼 등장하는 행복한 계면이 */
+.ending-buddy {
+  position: absolute;
+  top: -54px;
+  left: 50%;
+  width: clamp(72px, 12vh, 104px);
+  transform: translateX(-50%);
+  filter: drop-shadow(0 8px 12px rgba(91, 127, 214, 0.3));
+  animation: buddyPop 0.6s cubic-bezier(0.2, 1.4, 0.3, 1) 0.2s both, buddyBob 2.4s ease-in-out 0.8s infinite;
+}
+@keyframes buddyPop { from { transform: translateX(-50%) scale(0) translateY(40px); } to { transform: translateX(-50%) scale(1) translateY(0); } }
+@keyframes buddyBob { 0%, 100% { transform: translateX(-50%) translateY(0) rotate(-3deg); } 50% { transform: translateX(-50%) translateY(-8px) rotate(3deg); } }

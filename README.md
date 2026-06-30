@@ -1,8 +1,9 @@
-# 🫧 이슬로 베이비 버블 클린 (Eslo Baby Bubble Clean)
+# 🫧 계면이 퇴치 미션 (Eslo Baby — Gyemyeoni Mission)
 
 > 베이비페어 행사장용 **브랜드 체험 웹게임**
-> 아기 몸에 달라붙은 장난꾸러기 **계면이**를 *이슬로 베이비 바스 앤 샴푸*로 깨끗하게 씻겨내는 콘텐츠입니다.
-> 플레이만으로 **"친수성 계면활성제 → 물로 깨끗하게 씻어내는"** 브랜드 컨셉을 자연스럽게 전달합니다.
+> 아기 피부에 달라붙은 장난꾸러기 악당 **계면이**를 *이슬로 베이비* 제품으로 모두 씻어내는 콘텐츠입니다.
+> 플레이만으로 **"피부에 남은 나쁜 계면이(계면활성제)를 깨끗하게 씻어낸다"** 는 브랜드 컨셉을 자연스럽게 전달합니다.
+> *※ 의학적·기능성 효능을 주장하지 않는 컨셉 표현용 게임입니다.*
 
 - **개발 스택**: HTML + CSS + Vanilla JavaScript (외부 프레임워크 없음)
 - **플레이 시간**: 약 30~60초 (3단계 미션)
@@ -15,32 +16,39 @@
 
 ```
 eslo-baby-game/
-├── index.html        # 화면 구조(시작/게임/성공/실패) + 아기 SVG + HUD + 웹캠 미리보기
-├── style.css         # 파스텔 블루·화이트·민트 테마, 애니메이션, 반응형, 손인식 UI
-├── script.js         # 게임 로직 (입력/미션/파티클/계면이/사운드)
+├── index.html        # 화면 구조(시작/게임/성공/실패) + 아기 SVG + HUD + 보호막 + 엔딩 캔버스
+├── style.css         # 파스텔 톤 테마, 계면이/거품/보호막/엔딩 애니메이션, 손인식 UI
+├── script.js         # 게임 로직 (입력/미션/Object Pool 파티클/계면이 AI/사운드)
 ├── hand-tracking.js  # 손 인식 모듈 (MediaPipe → Input.feedExternalPointer 연결)
 ├── README.md         # 이 문서
 ├── assets/
-│   ├── gyemyeon.jpg              # 계면이 캐릭터 이미지
-│   └── eslo-baby-bath-shampoo.png  # 제품(바스 앤 샴푸) 이미지
+│   ├── enemy/                        # 계면이 스프라이트(상태별)
+│   │   ├── enemy-gyemyeon-idle.png   # 기본
+│   │   ├── enemy-gyemyeon-cling.png  # 기어다님
+│   │   ├── enemy-gyemyeon-run.png    # 도망
+│   │   ├── enemy-gyemyeon-boss.png   # 보스(끝까지 버팀)
+│   │   ├── sad-gyemyeon-idle.png     # 씻겨 내려갈 때
+│   │   └── best-gyemyeon-idle.png    # 보호막에 튕겨난 뒤(행복)
+│   └── products/                     # 제품 이미지
+│       ├── eslo-baby-bath-shampoo.png   # MISSION 1 (+ MISSION 3 로션 임시)
+│       └── eslo-baby-hip-cleanser.png   # MISSION 2
 └── sound/            # 효과음 (선택) — 파일이 없어도 게임은 동작
-    ├── bubble.mp3    # 거품 생성
-    ├── pop.mp3       # 계면이 사라짐("뽁!")
-    ├── water.mp3     # 샤워 물줄기
-    ├── clear.mp3     # 미션 클리어
-    └── success.mp3   # 최종 성공
+    ├── bubble.mp3 / pop.mp3 / water.mp3 / clear.mp3 / success.mp3
 ```
 
-### 게임 흐름
+### 게임 흐름 (스토리형 3미션)
 
-| 단계 | 내용 | 사용 도구 | 클리어 조건 |
-|------|------|-----------|-------------|
-| **MISSION 1** | 계면이 7마리 씻어내기 | 제품(바스 앤 샴푸) 드래그 → 거품 생성 | 계면이 0마리 |
-| **MISSION 2** | 남은 거품 헹구기 | 샤워기 드래그 | 거품 거의 제거 |
-| **MISSION 3** | 아기 톡톡 닦기 | 수건 드래그 | 닦기 게이지 완료 → 반짝반짝 |
+| 단계 | 제품 | 스토리 | 플레이 | 클리어 |
+|------|------|--------|--------|--------|
+| **MISSION 1** | 바스앤샴푸 | "계면이들이 잔뜩 달라붙었어요!" | 제품 드래그 → 거품으로 씻기 | 계면이 0마리 |
+| **MISSION 2** | 엉덩이 클렌저 | "헤헤… 우린 엉덩이에 숨어있지!" | 엉덩이 구역 계면이 씻기(보스 등장) | 계면이 0마리 |
+| **MISSION 3** | 로션 | "촉촉한 보호막을 만들어주세요!" | 문질러 보호막 생성 → 계면이 튕겨남 | 보호막 100% |
 
-성공 시 **"클린 완료! 순하게 클린!"** 화면 → 직원에게 보여주기 → **다시하기**.
-제한 시간(기본 40초) 초과 시 **실패 → 다시 도전** 화면.
+- **계면이 행동**: 피부 위를 천천히 **기어다니고**, 거품/제품이 가까워지면 **도망**갑니다. 거품에 닿으면 슬픈 표정(`sad`)으로 **물과 함께 아래로 씻겨 내려가고**, 로션 보호막이 완성되면 행복한 표정(`best`)으로 **바깥으로 튕겨납니다**.
+- **엔딩**: *GOOD JOB!* 화면 + **컨페티·폭죽·별·반짝이** 연출 → 직원에게 보여주기 → **다시하기**.
+- 제한 시간(기본 60초, 미션 전환 중 정지) 초과 시 **실패 → 다시 도전** 화면.
+
+> ⚙️ **성능**: 거품·물방울·반짝이·컨페티 등 모든 파티클과 계면이 DOM은 **Object Pool로 재사용**합니다. 게임 루프 중 객체를 새로 생성하지 않아 **iPad Safari 장시간 운영에도 메모리 누수/프레임 드랍이 없도록** 설계했습니다.
 
 ---
 
@@ -75,18 +83,28 @@ npx serve .
 
 ## 3. 이미지 교체 방법
 
-게임에 사용되는 이미지는 `assets/` 폴더에 있습니다. **같은 파일명으로 덮어쓰면** 코드 수정 없이 교체됩니다.
+이미지는 `assets/enemy/`(계면이)와 `assets/products/`(제품)에 있습니다. **같은 파일명으로 덮어쓰면** 코드 수정 없이 교체됩니다.
 
 | 교체 대상 | 파일 | 권장 사양 |
 |-----------|------|-----------|
-| 계면이 캐릭터 | `assets/gyemyeon.jpg` | 정사각형, 배경 단순/투명(png 권장), 200×200 이상 |
-| 제품 이미지 | `assets/eslo-baby-bath-shampoo.png` | 세로형, **배경 투명 PNG** 권장 |
+| 계면이(기본/기어다님/도망/보스/슬픔/행복) | `assets/enemy/*.png` | **배경 투명 PNG**, 정면 캐릭터 |
+| 바스앤샴푸 (MISSION 1) | `assets/products/eslo-baby-bath-shampoo.png` | 세로형, **배경 투명 PNG** 권장 |
+| 엉덩이 클렌저 (MISSION 2) | `assets/products/eslo-baby-hip-cleanser.png` | 세로형, **배경 투명 PNG** 권장 |
 
-- 파일명을 **바꾸고 싶다면** 다음을 함께 수정하세요.
-  - `index.html` : `<img ... src="assets/...">` 부분
-  - `style.css` : `.tool-cursor--bottle { background: url("assets/...") }`
-  - `script.js` : `Gyemyeon` 클래스의 `src="assets/gyemyeon.jpg"`
-- **아기 캐릭터**는 이미지가 아니라 `index.html` 안의 **인라인 SVG**입니다. 색/표정 등은 해당 SVG의 `fill` 값을 수정하면 됩니다.
+### ⭐ 로션 이미지 추가 (MISSION 3)
+현재 로션 이미지가 없어 **MISSION 3은 바스앤샴푸 이미지를 임시로 사용**합니다.
+로션 이미지가 준비되면 `assets/products/` 에 넣고, `script.js` 상단의 **한 줄만** 바꾸면 끝입니다.
+```js
+// script.js → CONFIG.PRODUCTS
+PRODUCTS: {
+  bathShampoo: "assets/products/eslo-baby-bath-shampoo.png",
+  hipCleanser: "assets/products/eslo-baby-hip-cleanser.png",
+  lotion:      "assets/products/eslo-baby-bath-shampoo.png", // ← 여기를 로션 경로로 교체
+},
+```
+
+- 모든 제품/스프라이트 경로는 `script.js`의 `CONFIG.PRODUCTS` / `CONFIG.SPRITES` **한 곳에서** 관리됩니다(파일명을 바꿔도 여기만 수정).
+- **아기 캐릭터**는 이미지가 아니라 `index.html` 안의 **인라인 SVG**입니다. 색/표정은 SVG의 `fill` 값을 수정하면 됩니다.
 
 ---
 
@@ -94,16 +112,21 @@ npx serve .
 
 코드는 확장을 전제로 설계돼 있습니다. 주요 진입점은 다음과 같습니다.
 
-### 난이도 / 시간 조정 (가장 자주 쓰는 부분)
+### 난이도 / 시간 / 미션 조정 (가장 자주 쓰는 부분)
 `script.js` 상단 **`CONFIG`** 객체만 수정하면 됩니다.
 ```js
 const CONFIG = {
-  GYEMYEON_COUNT: 7,        // 계면이 수
-  GAME_DURATION_SEC: 40,    // 제한 시간(초)  ← 기획 기준 30, 토들러 배려로 40
-  WASH_RATE: 160,           // 씻기는 속도(클수록 쉬움)
+  GAME_DURATION_SEC: 60,   // 제한 시간(초), 미션 전환 중에는 정지
+  ENEMY_HEALTH: 70,        // 계면이 체력 (작을수록 쉬움)
+  BOSS_HEALTH: 170,        // 보스 체력
+  WASH_RATE: 190,          // 씻기는 속도 (클수록 쉬움)
+  FLEE_RADIUS: 96,         // 도망 시작 거리 (작을수록 쉬움)
+  SHIELD_RATE: 0.5,        // 로션 보호막 차오르는 속도
+  MISSIONS: [ /* 미션별 제품·계면이 수·구역·스토리 (데이터 주도) */ ],
   ...
 };
 ```
+- 미션을 추가/변경하려면 `CONFIG.MISSIONS` 배열에 항목을 넣으면 됩니다(코드 수정 없이 미션 확장 가능).
 
 ### 점수 / 최고기록 저장
 `Game.win()` 안의 주석 표시 지점에 `localStorage` 저장 로직을 추가하면 됩니다.

@@ -1,165 +1,180 @@
 /* =====================================================================
- * 이슬로 베이비 버블 클린 - script.js
- * Vanilla JavaScript (외부 프레임워크 미사용)
+ * 계면이 퇴치 미션 - script.js
+ * 이슬로 베이비 브랜드 체험 게임 (Vanilla JS, 프레임워크 없음)
  *
- * 구조 요약
- *  1) CONFIG          : 게임 상수 (난이도/시간/개수 등) — 행사 운영 시 이 부분만 조정
+ * 모듈 구성
+ *  1) CONFIG          : 게임 상수/미션/에셋 경로 (운영 시 이 부분만 조정)
  *  2) Utils           : 공용 유틸 함수
- *  3) AudioManager    : 사운드 재생 (현재는 파일 없이도 동작, 주석 가이드 포함)
- *  4) InputManager    : 포인터(마우스/터치/펜) 입력을 통합 → 추후 MediaPipe Hands 연동 지점
- *  5) ParticleSystem  : 캔버스 기반 거품/물방울/물줄기/반짝이 파티클
- *  6) Gyemyeon        : 계면이 캐릭터 클래스
- *  7) Game            : 상태/미션/루프 총괄
- *  8) bootstrap       : 초기화 및 버튼 바인딩
+ *  3) AudioManager    : 사운드(파일 없어도 동작)
+ *  4) Input           : 마우스/터치 통합 + 손 인식 입력 훅(feedExternalPointer)
+ *  5) AssetLoader     : 스프라이트 사전 로드(런타임 끊김 방지)
+ *  6) ParticlePool    : 거품/물방울/반짝이/컨페티/폭죽/별 — Object Pool(메모리 누수 방지)
+ *  7) Enemy / EnemyPool : 계면이(기어다님·도망·씻김·튕겨남) + DOM 재사용 풀
+ *  8) Game            : 상태/미션/루프 총괄
+ *  9) bootstrap       : 초기화
  *
- * 좌표계: 모든 게임 좌표는 "플레이필드(playfield) 픽셀" 기준입니다.
- *         포인터/캔버스/계면이 모두 같은 좌표계를 사용해 충돌을 계산합니다.
+ * 성능 메모: 파티클과 계면이 DOM은 모두 풀로 재사용합니다.
+ *           게임 루프 중에는 객체를 새로 생성하지 않아 GC 부담이 거의 없습니다.
+ *           (iPad Safari 장시간 운영 대응)
  * ===================================================================== */
 
 (() => {
   "use strict";
 
   /* ===================================================================
-   * 1) CONFIG : 게임 설정 상수
-   *    - 행사 난이도/시간 조정은 이 객체만 수정하면 됩니다.
+   * 1) CONFIG
    * =================================================================== */
   const CONFIG = {
-    GYEMYEON_COUNT: 7,          // 계면이 마리 수
-    GAME_DURATION_SEC: 40,      // 제한 시간(초). 기획 기준 30초 → 토들러 배려로 40 기본값
-    TIMER_HURRY_AT: 10,         // 남은 시간 이때부터 빨간 경고
+    GAME_DURATION_SEC: 60,     // 전체 제한 시간(초). 미션 전환 연출 동안은 정지.
+    TIMER_HURRY_AT: 12,        // 남은 시간 경고 시점
 
-    WASH_RATE: 160,             // 거품이 닿을 때 계면이 체력 감소 속도(per sec)
-    GY_MAX_HEALTH: 100,         // 계면이 체력
-    GY_CRY_AT: 40,              // 체력 이하일 때 울먹임 상태
+    ENEMY_HEALTH: 70,          // 일반 계면이 체력
+    BOSS_HEALTH: 170,          // 보스 계면이 체력(끝까지 버팀)
+    WASH_RATE: 190,            // 거품/제품이 닿을 때 체력 감소 속도(per sec)
 
-    BUBBLE_MAX: 260,            // 동시에 존재 가능한 거품 최대 수(성능 보호)
-    BUBBLE_TRAIL_PER_MOVE: 3,   // 드래그 1회 이동당 생성 거품 수
+    FLEE_RADIUS: 96,           // 이 거리 안에 커서가 오면 도망
+    CRAWL_SPEED: 36,           // 평소 기어다니는 속도(px/s)
+    FLEE_SPEED: 150,           // 도망칠 때 속도(px/s)
+
+    BUBBLE_TRAIL_PER_MOVE: 3,  // 드래그 1회 이동당 거품 수
     BUBBLE_MIN_R: 9,
     BUBBLE_MAX_R: 20,
+    POOL_CAP: 360,             // 게임 파티클 풀 용량
+    ENDING_CAP: 460,           // 엔딩 파티클 풀 용량
+    ENEMY_POOL_MAX: 8,         // 계면이 DOM 풀 크기(미션 최대 마리수 이상)
 
-    M2_RINSE_RADIUS: 80,        // 샤워 물줄기가 거품을 씻어내는 반경
-    M2_CLEAR_RATIO: 0.08,       // 거품이 이 비율 이하로 남으면 미션2 클리어
-    M3_DRY_NEEDED: 100,         // 미션3 닦기 진행 총량
-    M3_DRY_RATE: 70,            // 수건이 아기에 닿을 때 진행 속도(per sec)
+    SHIELD_RATE: 0.5,          // 로션 보호막 차오르는 속도(per sec, 0~1)
 
-    // 계면이 제거 시 랜덤 말풍선 문구
+    // ---- 제품 이미지 (한 곳에서 관리: 추후 로션 이미지 추가 시 lotion만 교체) ----
+    PRODUCTS: {
+      bathShampoo: "assets/products/eslo-baby-bath-shampoo.png",
+      hipCleanser: "assets/products/eslo-baby-hip-cleanser.png",
+      // TODO: 로션 이미지 준비되면 아래 경로만 교체하면 됩니다.
+      lotion: "assets/products/eslo-baby-bath-shampoo.png",
+    },
+
+    // ---- 계면이 스프라이트 ----
+    SPRITES: {
+      idle: "assets/enemy/enemy-gyemyeon-idle.png",   // 기본
+      cling: "assets/enemy/enemy-gyemyeon-cling.png", // 기어다님
+      run: "assets/enemy/enemy-gyemyeon-run.png",     // 도망
+      boss: "assets/enemy/enemy-gyemyeon-boss.png",   // 보스
+      sad: "assets/enemy/sad-gyemyeon-idle.png",      // 씻겨 내려감
+      best: "assets/enemy/best-gyemyeon-idle.png",    // 보호막에 튕겨남(행복)
+    },
+
+    // ---- 미션 정의 (데이터 주도 설계) ----
+    MISSIONS: [
+      {
+        n: 1, label: "MISSION 1", product: "bathShampoo",
+        type: "wash", count: 6, boss: false,
+        zones: ["face", "arm", "belly", "leg", "hip"],
+        story: "계면이들이 아기 피부에 잔뜩 달라붙었어요!",
+        dockHint: "바스앤샴푸를 드래그해 거품을 만들어요!",
+      },
+      {
+        n: 2, label: "MISSION 2", product: "hipCleanser",
+        type: "wash", count: 4, boss: true,
+        zones: ["hip"],
+        story: "헤헤… 우린 아직 엉덩이에 숨어있지!",
+        dockHint: "엉덩이 클렌저로 구석구석 씻어요!",
+      },
+      {
+        n: 3, label: "MISSION 3", product: "lotion",
+        type: "lotion", count: 5, boss: false,
+        zones: ["face", "arm", "belly", "leg"],
+        story: "깨끗하게 씻었어요! 이제 촉촉한 보호막을 만들어주세요.",
+        dockHint: "로션을 문질러 반짝이는 보호막을 만들어요!",
+      },
+    ],
+
+    // ---- 계면이가 붙는 신체 구역(아기 컨테이너 비율 좌표) ----
+    ZONES: {
+      face:  { x0: 0.30, y0: 0.07, x1: 0.70, y1: 0.30 },
+      arm:   { x0: 0.10, y0: 0.40, x1: 0.90, y1: 0.62 },
+      belly: { x0: 0.34, y0: 0.44, x1: 0.66, y1: 0.66 },
+      leg:   { x0: 0.30, y0: 0.74, x1: 0.70, y1: 0.93 },
+      hip:   { x0: 0.30, y0: 0.63, x1: 0.70, y1: 0.82 },
+      all:   { x0: 0.12, y0: 0.08, x1: 0.88, y1: 0.92 },
+    },
+    BODY_BOUNDS: { x0: 0.04, y0: 0.03, x1: 0.96, y1: 0.97 }, // 도망 시 이탈 방지 경계
+
     SPEECHES: ["앗!", "으악~", "씻기 싫어~", "도망가!", "안돼~", "차가워!", "미끌미끌~", "뽁!"],
+    REPEL_SPEECH: "앗… 이제 못 들어가!",
+    // 엔딩 컨페티/폭죽 색상 (파스텔 + 브랜드)
+    PARTY_COLORS: ["#ffd1e3", "#bfe3ff", "#c9f3e6", "#fff3b0", "#caa9ff", "#9fe6d2", "#ffb3c6"],
   };
 
   /* ===================================================================
-   * 2) Utils : 공용 유틸 함수
+   * 2) Utils
    * =================================================================== */
-  const rand = (min, max) => min + Math.random() * (max - min);          // 실수 난수
-  const randInt = (min, max) => Math.floor(rand(min, max + 1));          // 정수 난수
-  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));            // 범위 제한
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];    // 배열 랜덤 선택
-  const dist2 = (ax, ay, bx, by) => {                                    // 거리 제곱(루트 생략→성능)
-    const dx = ax - bx, dy = ay - by;
-    return dx * dx + dy * dy;
-  };
+  const rand = (min, max) => min + Math.random() * (max - min);
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+  const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
 
   /* ===================================================================
-   * 3) AudioManager : 사운드 매니저
-   *    - sound 폴더에 mp3가 있으면 재생, 없으면 조용히 무시(행사장 안정성).
-   *    - 모바일/태블릿은 첫 사용자 입력 후에만 오디오가 허용되므로
-   *      START 버튼에서 unlock()을 호출합니다.
+   * 3) AudioManager (파일 없으면 조용히 무시)
    * =================================================================== */
   const AudioManager = {
     enabled: true,
     sounds: {},
-
-    // 사용할 사운드 목록 (sound/ 폴더에 동일 이름의 mp3를 넣으면 자동 재생)
     manifest: {
-      bubble: "sound/bubble.mp3",   // 거품 생성
-      pop: "sound/pop.mp3",         // 계면이 "뽁!" 사라짐
-      water: "sound/water.mp3",     // 샤워 물줄기
-      clear: "sound/clear.mp3",     // 미션 클리어
-      success: "sound/success.mp3", // 최종 성공
+      bubble: "sound/bubble.mp3",
+      pop: "sound/pop.mp3",
+      water: "sound/water.mp3",
+      clear: "sound/clear.mp3",
+      success: "sound/success.mp3",
     },
-
-    /** 오디오 객체 미리 생성 (파일이 없어도 에러가 게임을 막지 않음) */
     init() {
-      Object.entries(this.manifest).forEach(([key, src]) => {
-        try {
-          const a = new Audio(src);
-          a.preload = "auto";
-          this.sounds[key] = a;
-        } catch (e) {
-          /* 파일이 없으면 무시 */
-        }
+      Object.entries(this.manifest).forEach(([k, src]) => {
+        try { const a = new Audio(src); a.preload = "auto"; this.sounds[k] = a; } catch (e) {}
       });
     },
-
-    /** 모바일 오디오 잠금 해제: 첫 터치/클릭 시 호출 */
     unlock() {
       Object.values(this.sounds).forEach((a) => {
         a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
       });
     },
-
-    /** 사운드 재생 (없으면 무시). vol: 0~1 */
     play(key, vol = 1) {
       if (!this.enabled) return;
       const base = this.sounds[key];
       if (!base) return;
-      try {
-        // 동시 다발 재생을 위해 복제 후 재생
-        const a = base.cloneNode();
-        a.volume = vol;
-        a.play().catch(() => {});
-      } catch (e) {}
+      try { const a = base.cloneNode(); a.volume = vol; a.play().catch(() => {}); } catch (e) {}
     },
   };
 
   /* ===================================================================
-   * 4) InputManager : 입력 추상화 레이어
-   *    - 마우스/터치/펜을 Pointer Events로 통합 처리.
-   *    - 게임은 onDown/onMove/onUp 콜백만 사용하므로, 추후 MediaPipe Hands가
-   *      손 좌표를 feedExternalPointer()로 흘려보내면 그대로 동작합니다.
-   *
-   *    [MediaPipe 연동 예시]
-   *      hands.onResults((res) => {
-   *        const tip = res.multiHandLandmarks?.[0]?.[8]; // 검지 끝
-   *        if (tip) Input.feedExternalPointer(tip.x, tip.y, true, true); // (정규화 좌표)
-   *        else Input.feedExternalPointer(0, 0, false, true);
-   *      });
+   * 4) Input : 마우스/터치 통합 + 손 인식 입력 훅
+   *    (손 인식 모듈 hand-tracking.js가 feedExternalPointer로 좌표를 흘려보냄)
    * =================================================================== */
   const Input = {
     el: null,
     isDown: false,
-    mode: "pointer",    // "pointer"(마우스/터치) | "cameraHand"(손 인식) — 현재 활성 입력 소스
-    x: 0, y: 0,         // 현재 포인터(플레이필드 좌표)
-    px: 0, py: 0,       // 직전 포인터
+    mode: "pointer",     // "pointer" | "cameraHand"
+    x: 0, y: 0,
+    px: 0, py: 0,
     callbacks: { down: null, move: null, up: null },
 
-    /** 입력 대상 엘리먼트에 리스너 부착 */
     attach(el, callbacks) {
       this.el = el;
       this.callbacks = callbacks;
-
-      // Pointer Events 하나로 마우스/터치/펜 통합
       el.addEventListener("pointerdown", this._onDown.bind(this));
       el.addEventListener("pointermove", this._onMove.bind(this));
       window.addEventListener("pointerup", this._onUp.bind(this));
       window.addEventListener("pointercancel", this._onUp.bind(this));
-
-      // 터치 기본 동작(스크롤/줌) 방지
       el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
       el.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
     },
-
-    /** 화면(client) 좌표 → 플레이필드 좌표로 변환 */
     _toLocal(clientX, clientY) {
       const r = this.el.getBoundingClientRect();
       return { x: clientX - r.left, y: clientY - r.top };
     },
-
     _onDown(e) {
-      this.mode = "pointer";   // 마우스/터치 입력이 들어오면 포인터 모드
+      this.mode = "pointer";
       const p = this._toLocal(e.clientX, e.clientY);
       this.isDown = true;
-      this.x = this.px = p.x;
-      this.y = this.py = p.y;
+      this.x = this.px = p.x; this.y = this.py = p.y;
       this.callbacks.down && this.callbacks.down(p.x, p.y);
     },
     _onMove(e) {
@@ -173,13 +188,7 @@
       this.isDown = false;
       this.callbacks.up && this.callbacks.up();
     },
-
-    /**
-     * 외부(예: MediaPipe Hands) 입력 주입용 훅.
-     * @param {number} nx,ny  - 정규화 좌표(0~1)면 normalized=true
-     * @param {boolean} active - 손이 펴져 있어 "드래그 중"인지
-     * @param {boolean} normalized - nx,ny가 0~1 정규화 좌표인지
-     */
+    /** 외부(손 인식 등) 입력 주입 — 마우스/터치와 동일 경로로 흐름 */
     feedExternalPointer(nx, ny, active, normalized = true) {
       this.mode = "cameraHand";
       const r = this.el.getBoundingClientRect();
@@ -192,334 +201,433 @@
   };
 
   /* ===================================================================
-   * 5) ParticleSystem : 캔버스 파티클(거품/물방울/물줄기/반짝이)
-   *    - 종류(type)에 따라 그리기/물리를 다르게 처리.
-   *    - 거품(bubble)은 충돌 대상이라 별도 배열에서도 참조됩니다.
+   * 5) AssetLoader : 스프라이트 사전 로드(첫 표시 끊김/깜빡임 방지)
    * =================================================================== */
-  class ParticleSystem {
-    constructor(canvas) {
+  const AssetLoader = {
+    cache: [],
+    preload() {
+      const list = [...Object.values(CONFIG.SPRITES), ...Object.values(CONFIG.PRODUCTS)];
+      list.forEach((src) => { const img = new Image(); img.src = src; this.cache.push(img); });
+    },
+  };
+
+  /* ===================================================================
+   * 6) ParticlePool : 모든 파티클을 재사용(Object Pool)
+   *    종류(kind): bubble / drop / water / sparkle / shield /
+   *                confetti / fw(폭죽) / star
+   * =================================================================== */
+  class ParticlePool {
+    constructor(canvas, cap) {
       this.canvas = canvas;
       this.ctx = canvas.getContext("2d");
-      this.bubbles = [];   // 충돌/헹굼 대상 거품
-      this.fx = [];        // 그 외 이펙트(물방울/물줄기/반짝이/스플래시)
-      this.dpr = 1;
+      this.cap = cap;
+      this.free = [];
+      this.active = [];
+      this.w = 0; this.h = 0; this.dpr = 1;
+      for (let i = 0; i < cap; i++) this.free.push(this._blank());
     }
-
-    /** 캔버스를 플레이필드 크기에 맞춰 리사이즈(고해상도 대응) */
+    _blank() {
+      return { kind: "", x: 0, y: 0, vx: 0, vy: 0, r: 0, life: 1, age: 0, g: 0, rot: 0, spin: 0, color: "#fff", alpha: 1, wob: 0, sw: 0 };
+    }
     resize() {
       const r = this.canvas.getBoundingClientRect();
       this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-      this.canvas.width = r.width * this.dpr;
-      this.canvas.height = r.height * this.dpr;
+      this.canvas.width = Math.max(1, r.width * this.dpr);
+      this.canvas.height = Math.max(1, r.height * this.dpr);
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      this.w = r.width;
-      this.h = r.height;
+      this.w = r.width; this.h = r.height;
+    }
+    /** 풀에서 입자 하나 꺼내기(없으면 null → 스폰 생략으로 성능 보호) */
+    obtain() {
+      const p = this.free.pop();
+      if (!p) return null;
+      p.age = 0; p.alpha = 1;
+      this.active.push(p);
+      return p;
+    }
+    clear() {
+      while (this.active.length) this.free.push(this.active.pop());
     }
 
-    clearAll() { this.bubbles.length = 0; this.fx.length = 0; }
-
-    /** 거품 생성 (드래그 경로에 풍성하게) */
-    spawnBubble(x, y) {
-      if (this.bubbles.length >= CONFIG.BUBBLE_MAX) return;
-      this.bubbles.push({
-        x: x + rand(-14, 14),
-        y: y + rand(-14, 14),
-        r: rand(CONFIG.BUBBLE_MIN_R, CONFIG.BUBBLE_MAX_R),
-        vx: rand(-8, 8),
-        vy: rand(-22, -6),      // 살짝 떠오름(둥실)
-        wob: rand(0, Math.PI * 2),
-        life: rand(6, 12),      // 충분히 오래 남아 미션2 헹굼 대상이 됨
-        popping: 0,
-      });
+    /* ---- 종류별 스폰 ---- */
+    bubble(x, y) {
+      const p = this.obtain(); if (!p) return;
+      p.kind = "bubble";
+      p.x = x + rand(-14, 14); p.y = y + rand(-14, 14);
+      p.r = rand(CONFIG.BUBBLE_MIN_R, CONFIG.BUBBLE_MAX_R);
+      p.vx = rand(-8, 8); p.vy = rand(-22, -6);
+      p.wob = rand(0, 6.28); p.life = rand(1.6, 3.2);
     }
-
-    /** 물방울 효과(계면이 제거 순간) */
-    spawnDroplets(x, y, n = 8) {
+    drop(x, y) {
+      const p = this.obtain(); if (!p) return;
+      p.kind = "drop";
+      p.x = x; p.y = y;
+      p.vx = rand(-80, 80); p.vy = rand(-40, 60);
+      p.r = rand(3, 7); p.g = 520; p.life = rand(0.5, 0.9);
+    }
+    water(x, y) {
+      const p = this.obtain(); if (!p) return;
+      p.kind = "water";
+      p.x = x + rand(-8, 8); p.y = y;
+      p.vx = rand(-20, 20); p.vy = rand(140, 260);
+      p.r = rand(2.5, 5); p.g = 240; p.life = rand(0.5, 0.9);
+    }
+    sparkle(x, y) {
+      const p = this.obtain(); if (!p) return;
+      p.kind = "sparkle";
+      p.x = x + rand(-26, 26); p.y = y + rand(-26, 26);
+      p.r = rand(6, 14); p.rot = rand(0, 3.14); p.spin = rand(-4, 4);
+      p.life = rand(0.5, 1.0); p.color = "#fff6c8";
+    }
+    shield(x, y) {
+      const p = this.obtain(); if (!p) return;
+      p.kind = "shield";
+      p.x = x + rand(-22, 22); p.y = y + rand(-22, 22);
+      p.r = rand(7, 16); p.rot = rand(0, 3.14); p.spin = rand(-3, 3);
+      p.vy = rand(-26, -8); p.life = rand(0.6, 1.1); p.color = "#bfe3ff";
+    }
+    confetti() {
+      const p = this.obtain(); if (!p) return;
+      p.kind = "confetti";
+      p.x = rand(0, this.w); p.y = rand(-40, -10);
+      p.vx = rand(-30, 30); p.vy = rand(80, 170);
+      p.r = rand(6, 11); p.sw = rand(0.6, 1.2);
+      p.rot = rand(0, 6.28); p.spin = rand(-6, 6);
+      p.wob = rand(0, 6.28); p.life = rand(3.5, 5.5);
+      p.color = pick(CONFIG.PARTY_COLORS);
+    }
+    firework(cx, cy) {
+      const n = 26, hue = pick(CONFIG.PARTY_COLORS);
       for (let i = 0; i < n; i++) {
-        this.fx.push({
-          type: "drop", x, y,
-          vx: rand(-90, 90), vy: rand(-160, -40),
-          r: rand(3, 7), life: rand(0.5, 0.9), age: 0, g: 520,
-        });
+        const p = this.obtain(); if (!p) return;
+        p.kind = "fw";
+        const a = (i / n) * 6.283, sp = rand(120, 260);
+        p.x = cx; p.y = cy;
+        p.vx = Math.cos(a) * sp; p.vy = Math.sin(a) * sp;
+        p.r = rand(2.5, 4.5); p.g = 90; p.life = rand(0.9, 1.4); p.color = hue;
       }
     }
-
-    /** 샤워 물줄기(아래로 흐르는 물 입자) */
-    spawnWaterStream(x, y) {
-      for (let i = 0; i < 3; i++) {
-        this.fx.push({
-          type: "water", x: x + rand(-10, 10), y: y + rand(0, 10),
-          vx: rand(-30, 30), vy: rand(180, 320),
-          r: rand(2.5, 5), life: rand(0.4, 0.7), age: 0, g: 240,
-        });
-      }
+    star(x, y) {
+      const p = this.obtain(); if (!p) return;
+      p.kind = "star";
+      p.x = x; p.y = y;
+      p.r = rand(8, 18); p.rot = rand(0, 3.14); p.spin = rand(-2, 2);
+      p.vy = rand(-30, -8); p.life = rand(0.8, 1.4); p.color = "#fff3b0";
     }
 
-    /** 작은 스플래시(거품이 헹궈질 때) */
-    spawnSplash(x, y) {
-      for (let i = 0; i < 5; i++) {
-        this.fx.push({
-          type: "drop", x, y,
-          vx: rand(-70, 70), vy: rand(-120, -20),
-          r: rand(2, 5), life: rand(0.3, 0.6), age: 0, g: 480,
-        });
-      }
-    }
-
-    /** 반짝이(수건 닦기/성공 연출) */
-    spawnSparkle(x, y, n = 2) {
-      for (let i = 0; i < n; i++) {
-        this.fx.push({
-          type: "sparkle", x: x + rand(-30, 30), y: y + rand(-30, 30),
-          r: rand(6, 14), life: rand(0.5, 1.0), age: 0,
-          rot: rand(0, Math.PI), spin: rand(-4, 4),
-        });
-      }
-    }
-
-    /** 물리 업데이트 */
+    /* ---- 물리 업데이트 (swap-remove로 비활성 입자 즉시 회수) ---- */
     update(dt) {
-      // 거품
-      for (let i = this.bubbles.length - 1; i >= 0; i--) {
-        const b = this.bubbles[i];
-        if (b.popping > 0) {
-          b.popping -= dt;
-          if (b.popping <= 0) { this.bubbles.splice(i, 1); continue; }
-          continue;
-        }
-        b.wob += dt * 3;
-        b.x += (b.vx + Math.sin(b.wob) * 12) * dt;
-        b.y += b.vy * dt;
-        b.vy += -4 * dt;                 // 천천히 더 떠오름
-        b.life -= dt;
-        if (b.y < -30 || b.life <= 0) this.bubbles.splice(i, 1);
-      }
-      // 그 외 이펙트
-      for (let i = this.fx.length - 1; i >= 0; i--) {
-        const p = this.fx[i];
+      const act = this.active;
+      for (let i = act.length - 1; i >= 0; i--) {
+        const p = act[i];
         p.age += dt;
-        if (p.age >= p.life) { this.fx.splice(i, 1); continue; }
-        if (p.type === "sparkle") { p.rot += p.spin * dt; }
-        else {
-          p.vy += (p.g || 0) * dt;
-          p.x += p.vx * dt;
-          p.y += p.vy * dt;
+        let dead = p.age >= p.life;
+        switch (p.kind) {
+          case "bubble":
+            p.wob += dt * 3;
+            p.x += (p.vx + Math.sin(p.wob) * 12) * dt;
+            p.y += p.vy * dt; p.vy += -4 * dt;
+            if (p.y < -30) dead = true;
+            break;
+          case "drop":
+          case "water":
+          case "fw":
+            p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+            break;
+          case "sparkle":
+            p.rot += p.spin * dt;
+            break;
+          case "shield":
+            p.rot += p.spin * dt; p.y += p.vy * dt;
+            break;
+          case "star":
+            p.rot += p.spin * dt; p.y += p.vy * dt;
+            break;
+          case "confetti":
+            p.wob += dt * 4;
+            p.x += (p.vx + Math.sin(p.wob) * 30) * dt;
+            p.y += p.vy * dt; p.rot += p.spin * dt;
+            if (p.y > this.h + 40) dead = true;
+            break;
+        }
+        if (dead) {
+          act[i] = act[act.length - 1]; act.pop();
+          this.free.push(p);
         }
       }
     }
 
-    /** 즉시 거품 일부를 헹굼(미션2): 지정 좌표 반경 내 거품을 펑 처리 */
-    rinseAt(x, y, radius) {
-      const r2 = radius * radius;
-      let removed = 0;
-      for (const b of this.bubbles) {
-        if (b.popping > 0) continue;
-        if (dist2(b.x, b.y, x, y) < r2) {
-          b.popping = 0.18;
-          this.spawnSplash(b.x, b.y);
-          removed++;
-        }
-      }
-      return removed;
-    }
-
-    /** 렌더링 */
+    /* ---- 렌더링 ---- */
     render() {
       const ctx = this.ctx;
       ctx.clearRect(0, 0, this.w, this.h);
-
-      // 거품: 반투명 + 하이라이트
-      for (const b of this.bubbles) {
-        const a = b.popping > 0 ? clamp(b.popping / 0.18, 0, 1) * 0.9 : 0.85;
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(220, 240, 255, ${a * 0.55})`;
-        ctx.fill();
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = `rgba(255, 255, 255, ${a})`;
-        ctx.stroke();
-        // 하이라이트
-        ctx.beginPath();
-        ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.28, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
-        ctx.fill();
-      }
-
-      // 이펙트
-      for (const p of this.fx) {
-        const t = 1 - p.age / p.life;
-        if (p.type === "water") {
-          ctx.beginPath();
-          ctx.ellipse(p.x, p.y, p.r * 0.6, p.r * 1.6, 0, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(150, 205, 255, ${0.7 * t})`;
-          ctx.fill();
-        } else if (p.type === "drop") {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(140, 200, 255, ${0.85 * t})`;
-          ctx.fill();
-        } else if (p.type === "sparkle") {
-          this._drawStar(ctx, p.x, p.y, p.r * t, p.rot, `rgba(255, 246, 200, ${t})`);
+      const act = this.active;
+      for (let i = 0; i < act.length; i++) {
+        const p = act[i];
+        const t = 1 - p.age / p.life; // 1→0 (페이드)
+        switch (p.kind) {
+          case "bubble": {
+            const a = 0.85 * clamp(t * 1.4, 0, 1);
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283);
+            ctx.fillStyle = `rgba(220,240,255,${a * 0.55})`; ctx.fill();
+            ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.stroke();
+            ctx.beginPath(); ctx.arc(p.x - p.r * 0.3, p.y - p.r * 0.3, p.r * 0.28, 0, 6.283);
+            ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fill();
+            break;
+          }
+          case "drop":
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283);
+            ctx.fillStyle = `rgba(140,200,255,${0.85 * t})`; ctx.fill();
+            break;
+          case "water":
+            ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 0.6, p.r * 1.7, 0, 0, 6.283);
+            ctx.fillStyle = `rgba(150,205,255,${0.7 * t})`; ctx.fill();
+            break;
+          case "sparkle":
+          case "shield":
+            this._star4(ctx, p.x, p.y, p.r * t, p.rot, this._rgba(p.color, t));
+            break;
+          case "star":
+            this._star5(ctx, p.x, p.y, p.r * (0.6 + 0.4 * Math.sin(p.age * 12)), p.rot, this._rgba(p.color, t));
+            break;
+          case "fw":
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283);
+            ctx.fillStyle = this._rgba(p.color, t); ctx.fill();
+            break;
+          case "confetti":
+            ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+            ctx.globalAlpha = clamp(t * 1.5, 0, 1); ctx.fillStyle = p.color;
+            ctx.fillRect(-p.r * 0.5, -p.r * 0.5 * p.sw, p.r, p.r * p.sw);
+            ctx.restore(); ctx.globalAlpha = 1;
+            break;
         }
       }
     }
-
-    /** 4갈래 반짝이 별 그리기 */
-    _drawStar(ctx, x, y, r, rot, color) {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rot);
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      for (let i = 0; i < 4; i++) {
-        ctx.rotate(Math.PI / 2);
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(r * 0.25, r * 0.25, r, 0);
-        ctx.quadraticCurveTo(r * 0.25, -r * 0.25, 0, 0);
-      }
-      ctx.fill();
-      ctx.restore();
+    _rgba(hex, a) {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+    }
+    _star4(ctx, x, y, r, rot, color) {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = color; ctx.beginPath();
+      for (let i = 0; i < 4; i++) { ctx.rotate(1.5708); ctx.moveTo(0, 0); ctx.quadraticCurveTo(r * 0.25, r * 0.25, r, 0); ctx.quadraticCurveTo(r * 0.25, -r * 0.25, 0, 0); }
+      ctx.fill(); ctx.restore();
+    }
+    _star5(ctx, x, y, r, rot, color) {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = color; ctx.beginPath();
+      for (let i = 0; i < 10; i++) { const rad = i % 2 ? r * 0.45 : r; const a = (i / 10) * 6.283; ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rad, Math.sin(a) * rad); }
+      ctx.closePath(); ctx.fill(); ctx.restore();
     }
   }
 
   /* ===================================================================
-   * 6) Gyemyeon : 계면이 캐릭터
-   *    - 앵커(붙은 위치) 기준으로 통통 튀고 좌우로 흔들리며,
-   *      가끔 위치를 바꿔 "살아있는 장난꾸러기" 느낌을 줍니다.
-   *    - 거품에 닿으면 체력이 줄고, 0이 되면 펑! 사라집니다.
+   * 7) Enemy : 계면이 (기어다님 → 도망 → 씻김/튕겨남)
+   *    DOM 구조: .enemy(위치) > .enemy__inner(좌우반전·크기) > img(상태 애니)
    * =================================================================== */
-  class Gyemyeon {
-    /**
-     * @param {object} layer  - DOM 레이어
-     * @param {object} field  - {w,h} 플레이필드 크기 getter
-     * @param {number} ax,ay  - 앵커 좌표(플레이필드 px)
-     */
-    constructor(layer, field, ax, ay) {
-      this.field = field;
-      this.ax = ax; this.ay = ay;       // 앵커(기준 위치)
-      this.cx = ax; this.cy = ay;       // 현재 중심(충돌 계산용)
-      this.health = CONFIG.GY_MAX_HEALTH;
-      this.alive = true;
-      this.dead = false;
-
-      this.t = rand(0, Math.PI * 2);    // 위상(개체마다 다르게)
-      this.hopSpeed = rand(2.4, 3.6);
-      this.swaySpeed = rand(1.2, 2.0);
-      this.hopAmp = rand(6, 12);
-      this.swayAmp = rand(10, 22);
-      this.repositionTimer = rand(2.5, 5); // 위치 바꾸기까지 시간
-
-      // DOM 생성
-      this.el = document.createElement("div");
-      this.el.className = "gyemyeon is-idle";
-      this.el.innerHTML = `<img class="gyemyeon__img" src="assets/gyemyeon.jpg" alt="계면이" draggable="false">`;
-      layer.appendChild(this.el);
-
-      this._surprisedT = 0;
+  class Enemy {
+    constructor(el) {
+      this.el = el;
+      this.inner = el.querySelector(".enemy__inner");
+      this.img = el.querySelector(".enemy__img");
+      this.inUse = false;
+      this._sprite = "";
     }
+    /** 풀에서 꺼내 새 미션용으로 초기화 */
+    spawn(opts) {
+      this.zone = opts.zone;
+      this.bounds = opts.bounds;          // 활동 구역(px) — 스폰/리사이즈 때만 계산
+      this.isBoss = opts.isBoss;
+      this.maxHealth = opts.isBoss ? CONFIG.BOSS_HEALTH : CONFIG.ENEMY_HEALTH;
+      this.health = this.maxHealth;
+      this.state = "crawl";               // crawl | flee | washing | repelled
+      this.cleared = false;
+      this.onCleared = opts.onCleared;
+      this.face = 1; this._bob = rand(0, 6.28);
+      this._hurtT = 0; this._idleT = 0; this._endTimer = 0;
+      this.x = rand(this.bounds.x0, this.bounds.x1);
+      this.y = rand(this.bounds.y0, this.bounds.y1);
+      this._newTarget();
+      this.inUse = true;
 
-    /** 거품/도구가 닿았을 때 데미지 */
+      this.el.className = "enemy" + (this.isBoss ? " enemy--boss" : "");
+      this.img.className = "enemy__img is-crawl";
+      this.img.style.transform = "";
+      this.el.style.display = "block";
+      this._setSprite(this.isBoss ? "boss" : "cling");
+      this._applyTransform();
+    }
+    _setSprite(name) {
+      if (this._sprite === name) return;
+      this._sprite = name;
+      this.img.src = CONFIG.SPRITES[name];
+    }
+    _newTarget() {
+      this.tx = rand(this.bounds.x0, this.bounds.x1);
+      this.ty = rand(this.bounds.y0, this.bounds.y1);
+      this._retargetT = rand(1.4, 3.4);
+    }
+    /** 구역 px 갱신(리사이즈 대응) */
+    setBounds(b) { this.bounds = b; }
+
     hit(amount) {
-      if (!this.alive) return;
+      if (this.state === "washing" || this.state === "repelled") return;
       this.health -= amount;
-      // 놀람 연출(짧게)
-      if (this._surprisedT <= 0) {
-        this.el.classList.add("is-surprised");
-        this._surprisedT = 0.35;
-      }
-      // 울먹임 연출
-      if (this.health <= CONFIG.GY_CRY_AT) {
-        this.el.classList.remove("is-idle");
-        this.el.classList.add("is-crying");
-      }
-      if (this.health <= 0) this._pop();
+      if (this._hurtT <= 0) { this.img.classList.add("is-hurt"); this._hurtT = 0.25; }
+      if (this.health <= 0) this._wash();
     }
-
-    /** 펑! 제거 연출 → 말풍선/물방울/사운드 */
-    _pop() {
-      if (!this.alive) return;
-      this.alive = false;
-      this.el.classList.remove("is-idle", "is-crying", "is-surprised");
-      this.el.classList.add("is-popping");
-
-      // 말풍선
-      const sp = document.createElement("div");
-      sp.className = "speech";
-      sp.textContent = pick(CONFIG.SPEECHES);
-      sp.style.left = `${this.cx}px`;
-      sp.style.top = `${this.cy}px`;
-      this.el.parentElement.appendChild(sp);
-      setTimeout(() => sp.remove(), 950);
-
+    /** 거품에 씻겨 내려감 */
+    _wash() {
+      this.state = "washing";
+      this.img.className = "enemy__img is-washing";
+      this.img.style.transform = "";
+      this._setSprite("sad");
+      Game.spawnWashSplash(this.x, this.y);
+      Game.speech(this.x, this.y, pick(CONFIG.SPEECHES));
       AudioManager.play("pop");
-
-      // 콜백(게임에 알림): 물방울 효과 + 카운트 감소
-      if (this.onPop) this.onPop(this.cx, this.cy);
-
-      // DOM 제거
-      setTimeout(() => { this.el.remove(); this.dead = true; }, 380);
+      this._endTimer = 0.75;
+    }
+    /** 로션 보호막에 튕겨남 */
+    repel() {
+      if (this.state === "washing" || this.state === "repelled") return;
+      this.state = "repelled";
+      const dir = this.x < Game.field.w / 2 ? -1 : 1;
+      this.el.style.setProperty("--fly-x", dir * rand(200, 360) + "px");
+      this.el.style.setProperty("--fly-r", dir * rand(220, 560) + "deg");
+      this.img.className = "enemy__img is-repelled";
+      this.img.style.transform = "";
+      this._setSprite("best");
+      Game.speech(this.x, this.y, CONFIG.REPEL_SPEECH);
+      Game.spawnSparkleBurst(this.x, this.y);
+      AudioManager.play("pop");
+      this._endTimer = 0.8;
     }
 
-    /** 매 프레임 모션 업데이트 */
-    update(dt) {
-      if (!this.alive) return;
-      this.t += dt;
+    update(dt, cursor) {
+      if (!this.inUse) return;
 
-      // 놀람 타이머
-      if (this._surprisedT > 0) {
-        this._surprisedT -= dt;
-        if (this._surprisedT <= 0) this.el.classList.remove("is-surprised");
+      // 씻김/튕겨남: CSS 애니메이션이 처리, 타이머 끝나면 회수
+      if (this.state === "washing" || this.state === "repelled") {
+        this._endTimer -= dt;
+        if (this._endTimer <= 0) this._finish();
+        return;
+      }
+      if (this._hurtT > 0) { this._hurtT -= dt; if (this._hurtT <= 0) this.img.classList.remove("is-hurt"); }
+
+      // 도망 판단
+      let fleeing = false;
+      if (cursor.active) {
+        if (dist2(cursor.x, cursor.y, this.x, this.y) < CONFIG.FLEE_RADIUS * CONFIG.FLEE_RADIUS) fleeing = true;
       }
 
-      // 가끔 위치 변경(장난치며 도망다니는 느낌)
-      this.repositionTimer -= dt;
-      if (this.repositionTimer <= 0) {
-        this.repositionTimer = rand(2.5, 5);
-        const a = Game.randomAnchorNear(this.ax, this.ay);
-        this.ax = a.x; this.ay = a.y;
+      if (fleeing) {
+        this.state = "flee";
+        if (!this.isBoss) this._setSprite("run");
+        this.img.classList.remove("is-crawl");
+        let dx = this.x - cursor.x, dy = this.y - cursor.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const sp = CONFIG.FLEE_SPEED * (this.isBoss ? 0.72 : 1);
+        this.x += (dx / len) * sp * dt;
+        this.y += (dy / len) * sp * dt;
+        this.face = dx >= 0 ? 1 : -1;
+      } else {
+        this.state = "crawl";
+        this.img.classList.add("is-crawl");
+        this._retargetT -= dt;
+        if (this._retargetT <= 0) this._newTarget();
+        let dx = this.tx - this.x, dy = this.ty - this.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 6) {
+          if (!this.isBoss) this._setSprite("idle");
+          this._idleT -= dt; if (this._idleT <= 0) this._newTarget();
+        } else {
+          if (!this.isBoss) this._setSprite("cling");
+          this._idleT = rand(0.4, 1.1);
+          const sp = CONFIG.CRAWL_SPEED * (this.isBoss ? 0.8 : 1);
+          this.x += (dx / len) * sp * dt;
+          this.y += (dy / len) * sp * dt;
+          this.face = dx >= 0 ? 1 : -1;
+        }
       }
 
-      // 통통(상하) + 좌우 흔들림
-      const hop = Math.abs(Math.sin(this.t * this.hopSpeed)) * this.hopAmp;
-      const sway = Math.sin(this.t * this.swaySpeed) * this.swayAmp;
-      this.cx = this.ax + sway;
-      this.cy = this.ay - hop;
+      // 아기 몸 밖으로 못 나가게 클램프
+      const bb = Game.bodyBoundsPx;
+      this.x = clamp(this.x, bb.x0, bb.x1);
+      this.y = clamp(this.y, bb.y0, bb.y1);
+      this._bob += dt * 6;
+      this._applyTransform();
+    }
 
-      // 체력에 따른 크기/투명도 (점점 작아지고 투명해짐)
-      const s = clamp(0.55 + (this.health / CONFIG.GY_MAX_HEALTH) * 0.45, 0.2, 1);
-      const op = clamp(this.health / (CONFIG.GY_CRY_AT * 0.8), 0.25, 1);
-      this.el.style.opacity = op;
-      this.el.style.transform = `translate(${this.cx}px, ${this.cy}px) scale(${s})`;
+    _applyTransform() {
+      const bob = this.state === "crawl" ? Math.sin(this._bob) * 3 : 0;
+      this.el.style.transform = `translate(${this.x}px, ${this.y + bob}px)`;
+      const hp = clamp(0.6 + 0.4 * (this.health / this.maxHealth), 0.4, 1);
+      this.inner.style.transform = `scaleX(${this.face}) scale(${hp})`;
+    }
+    _finish() {
+      this.inUse = false;
+      this.el.style.display = "none";
+      this.el.className = "enemy";
+      this.img.style.transform = "";
+      if (this.onCleared && !this.cleared) { this.cleared = true; this.onCleared(this); }
     }
   }
 
+  /* --- 계면이 DOM 풀: 요소를 재생성하지 않고 재사용 --- */
+  const EnemyPool = {
+    pool: [],
+    init(layer, max) {
+      for (let i = 0; i < max; i++) {
+        const el = document.createElement("div");
+        el.className = "enemy";
+        el.style.display = "none";
+        el.innerHTML = '<div class="enemy__inner"><img class="enemy__img" alt="계면이" draggable="false"></div>';
+        layer.appendChild(el);
+        this.pool.push(new Enemy(el));
+      }
+    },
+    obtain() {
+      for (const e of this.pool) if (!e.inUse) return e;
+      return null;
+    },
+    resetAll() {
+      for (const e of this.pool) { e.inUse = false; e.el.style.display = "none"; e.el.className = "enemy"; e.img.style.transform = ""; }
+    },
+    get activeList() { return this.pool.filter((e) => e.inUse); },
+  };
+
   /* ===================================================================
-   * 7) Game : 게임 총괄 (상태/미션/루프)
-   *    상태: "start" → "playing"(mission 1~3) → "success" | "fail"
+   * 8) Game : 상태/미션/루프
    * =================================================================== */
   const Game = {
-    state: "start",
-    mission: 1,
-    fields: {},          // DOM 참조 모음
+    state: "start",            // start | playing | success | fail
+    missionIndex: 0,
+    fields: {},
     field: { w: 0, h: 0 },
-    particles: null,
-    gyemyeons: [],
-    remaining: 0,
+    particles: null,           // 게임용 파티클 풀
+    ending: null,              // 엔딩용 파티클 풀
+    cursor: { active: false, x: 0, y: 0 },
     timeLeft: 0,
-    paused: false,       // 미션 전환 연출 동안 타이머 정지
-    dryProgress: 0,      // 미션3 진행도
-    m2InitialBubbles: 0, // 미션2 시작 시 거품 수(진행률 계산 기준)
+    paused: false,
     lastTs: 0,
     running: false,
 
-    /** 최초 1회 초기화 */
+    // 미션 상태
+    mission: null,
+    remaining: 0,
+    cleared: 0,
+    shield: 0,                 // 로션 보호막 진행도 0~1
+    repelledCount: 0,
+    bodyBoundsPx: { x0: 0, y0: 0, x1: 0, y1: 0 },
+    _endingT: 0,
+
     init() {
       const $ = (id) => document.getElementById(id);
       this.fields = {
         playfield: $("playfield"),
         babyContainer: $("baby-container"),
-        gyLayer: $("gyemyeon-layer"),
+        enemyLayer: $("gyemyeon-layer"),
+        shieldEl: $("skin-shield"),
         canvas: $("fx-canvas"),
+        endingCanvas: $("ending-canvas"),
         toolCursor: $("tool-cursor"),
         missionToast: $("mission-toast"),
         hud: $("hud"),
@@ -529,372 +637,351 @@
         hudMission: $("hud-mission"),
         gaugeFill: $("gauge-fill"),
         productDock: $("product-dock"),
+        productImg: $("product-img"),
         dockHint: $("dock-hint"),
         screenStart: $("screen-start"),
         screenSuccess: $("screen-success"),
         screenFail: $("screen-fail"),
       };
 
-      this.particles = new ParticleSystem(this.fields.canvas);
+      this.particles = new ParticlePool(this.fields.canvas, CONFIG.POOL_CAP);
+      this.ending = new ParticlePool(this.fields.endingCanvas, CONFIG.ENDING_CAP);
 
       AudioManager.init();
+      AssetLoader.preload();
+      EnemyPool.init(this.fields.enemyLayer, CONFIG.ENEMY_POOL_MAX);
 
-      // 입력 연결
       Input.attach(this.fields.playfield, {
         down: (x, y) => this.onDown(x, y),
         move: (x, y, px, py) => this.onMove(x, y, px, py),
         up: () => this.onUp(),
       });
 
-      // 리사이즈 대응
       window.addEventListener("resize", () => this.resize());
       this.resize();
 
-      // 버튼 바인딩
       $("btn-start").addEventListener("click", () => this.start());
       $("btn-restart-success").addEventListener("click", () => this.start());
       $("btn-restart-fail").addEventListener("click", () => this.start());
 
-      // 렌더 루프 시작(상태와 무관하게 항상 도는 단일 루프)
       this.running = true;
       this.lastTs = performance.now();
       requestAnimationFrame((t) => this.loop(t));
     },
 
-    /** 플레이필드 크기 갱신 */
     resize() {
       const r = this.fields.playfield.getBoundingClientRect();
-      this.field.w = r.width;
-      this.field.h = r.height;
+      this.field.w = r.width; this.field.h = r.height;
       this.particles.resize();
+      this.ending.resize();
+      this._recalcBounds();
     },
 
-    /* ---------------- 게임 시작/리셋 ---------------- */
-    start() {
-      AudioManager.unlock(); // 모바일 오디오 잠금 해제
-
-      // 화면 정리
-      this.fields.screenStart.classList.remove("is-active");
-      this.fields.screenSuccess.classList.remove("is-active");
-      this.fields.screenFail.classList.remove("is-active");
-      this.fields.babyContainer.classList.remove("is-shiny");
-
-      // 상태 리셋
-      this.state = "playing";
-      this.mission = 1;
-      this.timeLeft = CONFIG.GAME_DURATION_SEC;
-      this.paused = false;
-      this.dryProgress = 0;
-      this.particles.clearAll();
-
-      // 기존 계면이 제거
-      this.gyemyeons.forEach((g) => g.el && g.el.remove());
-      this.gyemyeons = [];
-
-      this.resize();
-      this.spawnGyemyeons();
-
-      this.remaining = this.gyemyeons.length;
-      this.fields.hudTotal.textContent = CONFIG.GYEMYEON_COUNT;
-
-      // 미션1 진입
-      this.enterMission(1);
-      this.updateHud();
+    /** 신체 구역/경계 px 재계산(리사이즈 대응) — 활성 계면이 구역도 갱신 */
+    _recalcBounds() {
+      const rect = this.babyRect();
+      this.bodyBoundsPx = this.zonePx(CONFIG.BODY_BOUNDS, rect);
+      for (const e of EnemyPool.activeList) {
+        e.setBounds(this.zonePx(CONFIG.ZONES[e.zone] || CONFIG.ZONES.all, rect));
+      }
     },
 
-    /* ---------------- 계면이 배치 ---------------- */
-
-    /** 아기 몸 영역(플레이필드 좌표) 계산 */
     babyRect() {
       const br = this.fields.babyContainer.getBoundingClientRect();
       const pr = this.fields.playfield.getBoundingClientRect();
       return { x: br.left - pr.left, y: br.top - pr.top, w: br.width, h: br.height };
     },
-
-    /** 아기 몸 위 앵커 후보(컨테이너 비율) — 머리/팔/배/다리 등 */
-    anchorRatios: [
-      { x: 0.50, y: 0.16 }, // 머리 위
-      { x: 0.30, y: 0.30 }, // 왼볼/어깨
-      { x: 0.70, y: 0.30 }, // 오른볼/어깨
-      { x: 0.22, y: 0.62 }, // 왼팔
-      { x: 0.78, y: 0.62 }, // 오른팔
-      { x: 0.50, y: 0.64 }, // 배
-      { x: 0.38, y: 0.86 }, // 왼다리
-      { x: 0.62, y: 0.86 }, // 오른다리
-      { x: 0.50, y: 0.42 }, // 가슴
-    ],
-
-    /** 계면이 7마리를 랜덤 앵커에 배치 */
-    spawnGyemyeons() {
-      const rect = this.babyRect();
-      const ratios = [...this.anchorRatios].sort(() => Math.random() - 0.5).slice(0, CONFIG.GYEMYEON_COUNT);
-      ratios.forEach((rt) => {
-        const ax = rect.x + rect.w * rt.x + rand(-12, 12);
-        const ay = rect.y + rect.h * rt.y + rand(-12, 12);
-        const g = new Gyemyeon(this.fields.gyLayer, this.field, ax, ay);
-        g.onPop = (x, y) => this.onGyemyeonPopped(x, y);
-        this.gyemyeons.push(g);
-      });
+    /** 비율 구역 → 플레이필드 px 구역 */
+    zonePx(b, rect) {
+      rect = rect || this.babyRect();
+      return {
+        x0: rect.x + b.x0 * rect.w, y0: rect.y + b.y0 * rect.h,
+        x1: rect.x + b.x1 * rect.w, y1: rect.y + b.y1 * rect.h,
+      };
     },
 
-    /** 현재 위치 근처의 새 앵커(아기 몸 범위 내) — 계면이가 위치 바꿀 때 사용 */
-    randomAnchorNear(x, y) {
-      const rect = this.babyRect();
-      const nx = clamp(x + rand(-40, 40), rect.x + 20, rect.x + rect.w - 20);
-      const ny = clamp(y + rand(-40, 40), rect.y + 20, rect.y + rect.h - 20);
-      return { x: nx, y: ny };
+    /* ---------------- 시작/리셋 ---------------- */
+    start() {
+      AudioManager.unlock();
+      this.fields.screenStart.classList.remove("is-active");
+      this.fields.screenSuccess.classList.remove("is-active");
+      this.fields.screenFail.classList.remove("is-active");
+      this.fields.babyContainer.classList.remove("is-shiny");
+      this.fields.shieldEl.style.opacity = 0;
+      this.fields.shieldEl.classList.remove("is-on");
+
+      this.state = "playing";
+      this.missionIndex = 0;
+      this.timeLeft = CONFIG.GAME_DURATION_SEC;
+      this.paused = false;
+      this.particles.clear();
+      this.ending.clear();
+      EnemyPool.resetAll();
+      this.resize();
+
+      this.enterMission(0);
     },
 
-    /** 계면이 제거 콜백 */
-    onGyemyeonPopped(x, y) {
-      this.particles.spawnDroplets(x, y, 10);
-      this.particles.spawnSparkle(x, y, 3);
-      this.remaining = Math.max(0, this.remaining - 1);
-      this.updateHud();
-      if (this.remaining <= 0 && this.mission === 1) {
-        this.completeMission(1);
-      }
-    },
+    /* ---------------- 미션 ---------------- */
+    enterMission(index) {
+      this.missionIndex = index;
+      const m = CONFIG.MISSIONS[index];
+      this.mission = m;
+      this.cleared = 0;
+      this.shield = 0;
+      this.repelledCount = 0;
+      this.fields.shieldEl.style.opacity = 0;
+      this.fields.shieldEl.classList.remove("is-on");
 
-    /* ---------------- 미션 진행 ---------------- */
+      // 도구/제품 이미지 세팅 (제품 경로는 CONFIG.PRODUCTS 한 곳에서)
+      const productSrc = CONFIG.PRODUCTS[m.product];
+      this.fields.productImg.src = productSrc;
+      this.fields.toolCursor.style.backgroundImage = `url("${productSrc}")`;
+      this.fields.dockHint.textContent = m.dockHint;
+      this.fields.hudMission.textContent = m.label;
 
-    /** 미션 진입(도구/안내/독 상태 세팅) */
-    enterMission(n) {
-      this.mission = n;
-      const toast = this.fields.missionToast;
+      // 계면이 스폰
+      this._spawnEnemies(m);
+      this.remaining = m.count;
+      this.fields.hudTotal.textContent = m.count;
 
-      if (n === 1) {
-        this.fields.hudMission.textContent = "MISSION 1";
-        this.fields.dockHint.textContent = "제품을 드래그해 거품을 만들어요!";
-        this.fields.productDock.classList.remove("is-hidden");
-        this.setTool("bottle");
-        this.showToast("MISSION 1", "계면이를 깨끗하게 씻겨요 🫧");
-      } else if (n === 2) {
-        this.fields.hudMission.textContent = "MISSION 2";
-        this.fields.dockHint.textContent = "샤워기로 거품을 헹궈요!";
-        this.fields.productDock.classList.add("is-hidden");
-        this.setTool("shower");
-        // 충분한 거품(폼) 보장: 아기 몸에 거품을 덮어줌
-        this.fillFoamOverBaby();
-        this.m2InitialBubbles = Math.max(1, this.particles.bubbles.length);
-        this.showToast("MISSION 2", "샤워기로 거품을 헹궈주세요 🚿");
-      } else if (n === 3) {
-        this.fields.hudMission.textContent = "MISSION 3";
-        this.fields.dockHint.textContent = "수건으로 톡톡 닦아요!";
-        this.fields.productDock.classList.add("is-hidden");
-        this.setTool("towel");
-        this.particles.bubbles.length = 0; // 남은 거품 정리
-        this.showToast("MISSION 3", "수건으로 톡톡 닦아주세요 🧺");
-      }
+      // 스토리 안내
+      this.showToast(m.label, m.story);
       this.updateHud();
     },
 
-    /** 미션 클리어 처리(연출 후 다음 미션 or 성공) */
-    completeMission(n) {
-      if (this.mission !== n) return;
-      this.paused = true; // 연출 동안 타이머 정지
+    _spawnEnemies(m) {
+      EnemyPool.resetAll();   // 이전 미션 잔여 계면이 정리(방어적)
+      const rect = this.babyRect();
+      const zones = m.zones.slice();
+      for (let i = 0; i < m.count; i++) {
+        const e = EnemyPool.obtain();
+        if (!e) break;
+        const zone = zones[i % zones.length];
+        const isBoss = m.boss && i === 0;   // 미션당 보스 1마리
+        e.spawn({
+          zone,
+          bounds: this.zonePx(CONFIG.ZONES[zone], rect),
+          isBoss,
+          onCleared: (en) => this.onEnemyCleared(en),
+        });
+      }
+    },
 
-      if (n < 3) {
-        AudioManager.play("clear");
-        this.showToast("MISSION CLEAR!", n === 1 ? "이제 거품을 헹궈볼까요?" : "마지막! 뽀송하게 말려요");
-        setTimeout(() => {
-          this.paused = false;
-          this.enterMission(n + 1);
-        }, 1700);
+    onEnemyCleared(enemy) {
+      // 로션 미션에서는 보호막 진행이 클리어 기준이므로 카운트만 갱신
+      if (this.mission.type === "wash") {
+        this.cleared++;
+        this.remaining = Math.max(0, this.mission.count - this.cleared);
+        this.updateHud();
+        if (this.cleared >= this.mission.count) this.completeMission();
       } else {
-        // 미션3까지 완료 → 성공
-        AudioManager.play("clear");
-        this.showToast("MISSION COMPLETE!", "뽀송뽀송 완료 ✨");
+        this.remaining = Math.max(0, this.mission.count - this.repelledCount);
+        this.updateHud();
+      }
+    },
+
+    completeMission() {
+      if (this.paused) return;
+      this.paused = true;
+      const isLast = this.missionIndex >= CONFIG.MISSIONS.length - 1;
+      AudioManager.play("clear");
+
+      if (!isLast) {
+        this.showToast("MISSION CLEAR!", this.missionIndex === 0 ? "다음 계면이를 찾아라!" : "거의 다 왔어요!");
+        setTimeout(() => { this.paused = false; this.enterMission(this.missionIndex + 1); }, 1700);
+      } else {
+        this.showToast("MISSION COMPLETE!", "보호막 완성! ✨");
         this.fields.babyContainer.classList.add("is-shiny");
         setTimeout(() => this.win(), 1500);
       }
     },
 
-    /** 미션2용: 아기 몸 위에 거품 폼을 풍성하게 깔기 */
-    fillFoamOverBaby() {
-      const rect = this.babyRect();
-      const target = 150; // 헹굴 거품 목표 수
-      const need = Math.max(0, target - this.particles.bubbles.length);
-      for (let i = 0; i < need; i++) {
-        const x = rect.x + rand(0.12, 0.88) * rect.w;
-        const y = rect.y + rand(0.12, 0.92) * rect.h;
-        this.particles.bubbles.push({
-          x, y, r: rand(CONFIG.BUBBLE_MIN_R, CONFIG.BUBBLE_MAX_R),
-          vx: rand(-4, 4), vy: rand(-6, 2), wob: rand(0, 6.28),
-          life: 999, popping: 0, // 헹굴 때까지 유지
-        });
-      }
-    },
+    /* ---------------- 입력 ---------------- */
+    onDown(x, y) { if (this.state !== "playing" || this.paused) return; this.cursor.active = true; this.cursor.x = x; this.cursor.y = y; this._moveTool(x, y, true); this.applyTool(x, y, x, y); },
+    onMove(x, y, px, py) { if (this.state !== "playing" || this.paused) return; this.cursor.active = true; this.cursor.x = x; this.cursor.y = y; this._moveTool(x, y, true); this.applyTool(x, y, px, py); },
+    onUp() { this.cursor.active = false; this._moveTool(Input.x, Input.y, false); },
 
-    /* ---------------- 도구(커서) ---------------- */
-    setTool(name) {
-      const el = this.fields.toolCursor;
-      el.className = "tool-cursor tool-cursor--" + name;
-      this.currentTool = name;
-    },
-
-    moveToolCursor(x, y, active) {
+    _moveTool(x, y, active) {
       const el = this.fields.toolCursor;
       el.classList.toggle("is-active", !!active);
       el.style.transform = `translate(${x}px, ${y}px)`;
     },
 
-    /* ---------------- 입력 핸들러 ---------------- */
-    onDown(x, y) {
-      if (this.state !== "playing" || this.paused) return;
-      this.moveToolCursor(x, y, true);
-      this.applyToolAt(x, y, x, y);
-    },
-
-    onMove(x, y, px, py) {
-      if (this.state !== "playing" || this.paused) return;
-      this.moveToolCursor(x, y, true);
-      this.applyToolAt(x, y, px, py);
-    },
-
-    onUp() {
-      this.moveToolCursor(Input.x, Input.y, false);
-    },
-
-    /** 현재 도구를 좌표에 적용 (미션별 동작 분기) */
-    applyToolAt(x, y, px, py) {
-      if (this.mission === 1) {
-        // 제품: 드래그 경로에 거품 생성
+    /** 현재 미션 도구 효과 적용 */
+    applyTool(x, y, px, py) {
+      if (this.mission.type === "wash") {
+        // 제품 드래그 경로에 거품 생성
         for (let i = 0; i < CONFIG.BUBBLE_TRAIL_PER_MOVE; i++) {
           const t = i / CONFIG.BUBBLE_TRAIL_PER_MOVE;
-          this.particles.spawnBubble(px + (x - px) * t, py + (y - py) * t);
+          this.particles.bubble(px + (x - px) * t, py + (y - py) * t);
         }
-        if (Math.random() < 0.2) AudioManager.play("bubble", 0.5);
-      } else if (this.mission === 2) {
-        // 샤워기: 물줄기 + 주변 거품 헹굼
-        this.particles.spawnWaterStream(x, y);
-        const removed = this.particles.rinseAt(x, y, CONFIG.M2_RINSE_RADIUS);
-        if (removed > 0 && Math.random() < 0.3) AudioManager.play("water", 0.5);
-      } else if (this.mission === 3) {
-        // 수건: 아기 몸 위를 닦으면 진행도 증가 + 반짝이
-        const rect = this.babyRect();
-        const inside = x > rect.x && x < rect.x + rect.w && y > rect.y && y < rect.y + rect.h;
+        if (Math.random() < 0.18) AudioManager.play("bubble", 0.5);
+      } else {
+        // 로션: 아기 몸 위를 문지르면 보호막 진행 + 반짝이
+        const r = this.babyRect();
+        const inside = x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h;
         if (inside) {
-          this.particles.spawnSparkle(x, y, 2);
-          // 진행도는 update에서 dt 기반으로 누적(여기서는 플래그만)
-          this._towelOnBaby = true;
+          this.particles.shield(x, y);
+          this.particles.sparkle(x, y);
         }
       }
     },
 
-    /* ---------------- 메인 루프 ---------------- */
+    /* ---------------- 연출 헬퍼 ---------------- */
+    spawnWashSplash(x, y) {
+      for (let i = 0; i < 8; i++) this.particles.drop(x, y);
+      for (let i = 0; i < 6; i++) this.particles.water(x, y);
+    },
+    spawnSparkleBurst(x, y) {
+      for (let i = 0; i < 6; i++) this.particles.sparkle(x, y);
+    },
+    speech(x, y, text) {
+      const sp = document.createElement("div");
+      sp.className = "speech";
+      sp.textContent = text;
+      sp.style.left = `${x}px`;
+      sp.style.top = `${y}px`;
+      this.fields.enemyLayer.appendChild(sp);
+      setTimeout(() => sp.remove(), 950);
+    },
+
+    /* ---------------- 루프 ---------------- */
     loop(ts) {
       if (!this.running) return;
       let dt = (ts - this.lastTs) / 1000;
       this.lastTs = ts;
-      dt = Math.min(dt, 0.05); // 프레임 튐 방지
+      dt = Math.min(dt, 0.05);
 
-      if (this.state === "playing") this.update(dt);
-      this.particles.render();
+      if (this.state === "playing") {
+        this.update(dt);
+        this.particles.update(dt);
+        this.particles.render();
+      } else if (this.state === "success") {
+        this._endingTick(dt);
+        this.ending.update(dt);
+        this.ending.render();
+      } else {
+        this.particles.render(); // start/fail: 캔버스 비우기
+      }
 
       requestAnimationFrame((t) => this.loop(t));
     },
 
-    /** 게임 로직 업데이트 */
     update(dt) {
-      // 계면이 모션 + 충돌(미션1)
-      for (const g of this.gyemyeons) {
-        g.update(dt);
-        if (this.mission === 1 && g.alive) {
-          this.checkBubbleCollision(g, dt);
-        }
-      }
+      const enemies = EnemyPool.activeList;
 
-      this.particles.update(dt);
+      // 계면이 AI
+      for (const e of enemies) e.update(dt, this.cursor);
 
-      // 미션2 진행도 체크
-      if (this.mission === 2) {
-        const ratio = this.particles.bubbles.length / this.m2InitialBubbles;
-        if (ratio <= CONFIG.M2_CLEAR_RATIO) {
-          this.particles.bubbles.length = 0;
-          this.completeMission(2);
-        }
-      }
-
-      // 미션3 진행도 누적
-      if (this.mission === 3 && this._towelOnBaby) {
-        this.dryProgress += CONFIG.M3_DRY_RATE * dt;
-        // 진행에 따라 점점 빛나게
-        const p = clamp(this.dryProgress / CONFIG.M3_DRY_NEEDED, 0, 1);
-        if (p > 0.5) this.fields.babyContainer.classList.add("is-shiny");
-        if (this.dryProgress >= CONFIG.M3_DRY_NEEDED) {
-          this._towelOnBaby = false;
-          this.completeMission(3);
-        }
-        this._towelOnBaby = false; // 매 프레임 리셋(드래그 중에만 true)
+      // 미션별 메커니즘
+      if (this.mission.type === "wash") {
+        this._updateWash(dt, enemies);
+      } else {
+        this._updateLotion(dt, enemies);
       }
 
       // 타이머
       if (!this.paused) {
         this.timeLeft -= dt;
-        if (this.timeLeft <= 0) {
-          this.timeLeft = 0;
-          this.lose();
-        }
+        if (this.timeLeft <= 0) { this.timeLeft = 0; this.lose(); }
       }
-
       this.updateHud();
     },
 
-    /** 거품-계면이 충돌 검사 (미션1) */
-    checkBubbleCollision(g, dt) {
-      const bubbles = this.particles.bubbles;
-      let touching = false;
-      for (const b of bubbles) {
-        if (b.popping > 0) continue;
-        const rr = (b.r + 26); // 계면이 반경(약 26px) + 거품 반경
-        if (dist2(b.x, b.y, g.cx, g.cy) < rr * rr) { touching = true; break; }
+    /** 씻기 미션: 거품/커서와 충돌하면 체력 감소 */
+    _updateWash(dt, enemies) {
+      const bubbles = this.particles.active;
+      const dmg = CONFIG.WASH_RATE * dt;
+      const cursorActive = this.cursor.active;
+      for (const e of enemies) {
+        if (e.state === "washing" || e.state === "repelled") continue;
+        let touch = false;
+        // 커서(제품)로 직접 문지르면 즉시 반응
+        if (cursorActive && dist2(this.cursor.x, this.cursor.y, e.x, e.y) < 46 * 46) touch = true;
+        // 거품 충돌
+        if (!touch) {
+          for (let i = 0; i < bubbles.length; i++) {
+            const b = bubbles[i];
+            if (b.kind !== "bubble") continue;
+            const rr = b.r + 26;
+            if (dist2(b.x, b.y, e.x, e.y) < rr * rr) { touch = true; break; }
+          }
+        }
+        if (touch) e.hit(dmg);
       }
-      // 도구(제품)로 직접 문지르는 경우에도 닿은 것으로 간주(반응성↑)
-      if (!touching && Input.isDown) {
-        if (dist2(Input.x, Input.y, g.cx, g.cy) < 44 * 44) touching = true;
+    },
+
+    /** 로션 미션: 보호막 차오름 → 단계별로 계면이 튕겨냄 */
+    _updateLotion(dt, enemies) {
+      // 커서가 아기 몸 위에서 드래그 중이면 보호막이 차오름(이벤트 타이밍에 의존하지 않음)
+      const r = this.babyRect();
+      const rubbing = this.cursor.active &&
+        this.cursor.x > r.x && this.cursor.x < r.x + r.w &&
+        this.cursor.y > r.y && this.cursor.y < r.y + r.h;
+      if (rubbing) {
+        this.shield = clamp(this.shield + CONFIG.SHIELD_RATE * dt, 0, 1);
+        const el = this.fields.shieldEl;
+        el.classList.add("is-on");
+        el.style.opacity = (0.15 + this.shield * 0.85).toFixed(3);
+        if (this.shield > 0.45) this.fields.babyContainer.classList.add("is-shiny");
       }
-      if (touching) g.hit(CONFIG.WASH_RATE * dt);
+      // 보호막 진행도에 따라 계면이를 순차적으로 튕겨냄
+      const total = this.mission.count;
+      const repelThreshold = (this.repelledCount + 1) / total * 0.92;
+      if (this.shield >= repelThreshold && this.repelledCount < total) {
+        const target = enemies.find((e) => e.state !== "repelled" && e.state !== "washing");
+        if (target) { target.repel(); this.repelledCount++; this.remaining = Math.max(0, total - this.repelledCount); }
+      }
+      // 보호막 완성 + 모두 튕겨냄 → 미션 완료
+      if (this.shield >= 1 && this.repelledCount >= total && !this.paused) {
+        this.completeMission();
+      }
     },
 
     /* ---------------- HUD / 토스트 ---------------- */
     updateHud() {
       this.fields.hudRemaining.textContent = this.remaining;
       this.fields.hudTimer.textContent = Math.ceil(this.timeLeft);
-
-      // 진행 게이지: 미션별 진행률
       let progress = 0;
-      if (this.mission === 1) {
-        progress = (CONFIG.GYEMYEON_COUNT - this.remaining) / CONFIG.GYEMYEON_COUNT;
-      } else if (this.mission === 2) {
-        const ratio = this.particles.bubbles.length / Math.max(1, this.m2InitialBubbles);
-        progress = clamp(1 - ratio, 0, 1);
-      } else if (this.mission === 3) {
-        progress = clamp(this.dryProgress / CONFIG.M3_DRY_NEEDED, 0, 1);
-      }
-      this.fields.gaugeFill.style.width = (progress * 100).toFixed(1) + "%";
-
-      // 시간 임박 경고
+      if (this.mission.type === "wash") progress = this.cleared / this.mission.count;
+      else progress = this.shield;
+      this.fields.gaugeFill.style.width = (clamp(progress, 0, 1) * 100).toFixed(1) + "%";
       this.fields.hud.classList.toggle("is-hurry", this.timeLeft <= CONFIG.TIMER_HURRY_AT);
     },
-
     showToast(big, sub) {
       const el = this.fields.missionToast;
       el.innerHTML = `<div class="mission-toast__big">${big}</div><div class="mission-toast__sub">${sub}</div>`;
       el.classList.remove("is-show");
-      void el.offsetWidth; // 리플로우로 애니메이션 재시작
+      void el.offsetWidth;
       el.classList.add("is-show");
+    },
+
+    /* ---------------- 엔딩 연출 (컨페티/폭죽/별) ---------------- */
+    _endingTick(dt) {
+      this._endingT += dt;
+      // 컨페티 지속 낙하
+      if (Math.random() < dt * 60) for (let i = 0; i < 3; i++) this.ending.confetti();
+      // 폭죽 주기적 발사
+      if (this._endingT > 0.6) {
+        this._endingT = 0;
+        this.ending.firework(rand(this.ending.w * 0.2, this.ending.w * 0.8), rand(this.ending.h * 0.18, this.ending.h * 0.5));
+        for (let i = 0; i < 3; i++) this.ending.star(rand(0, this.ending.w), rand(0, this.ending.h * 0.6));
+      }
     },
 
     /* ---------------- 종료 ---------------- */
     win() {
       this.state = "success";
+      this.paused = false;
+      this._endingT = 0;
+      this.particles.clear();
+      this.ending.clear();
+      this.ending.resize();
       AudioManager.play("success");
       // === 확장 지점: 점수/최고기록 저장, QR 보상 발급 등 ===
-      // 예) Storage.saveRecord({ clearedAt: Date.now(), timeLeft: this.timeLeft });
       this.fields.screenSuccess.classList.add("is-active");
     },
-
     lose() {
       if (this.state !== "playing") return;
       this.state = "fail";
@@ -902,12 +989,12 @@
     },
   };
 
-  // 전역 노출(디버깅/확장 및 MediaPipe 연동에서 Input 접근용)
+  // 전역 노출 (손 인식 모듈/디버깅/확장)
   window.EsloGame = Game;
   window.EsloInput = Input;
 
   /* ===================================================================
-   * 8) bootstrap : DOM 준비되면 초기화
+   * 9) bootstrap
    * =================================================================== */
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => Game.init());

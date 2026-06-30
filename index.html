@@ -9,7 +9,7 @@
   />
   <meta name="theme-color" content="#cfeaff" />
   <meta name="description" content="이슬로 베이비 버블 클린 - 베이비페어 브랜드 체험 게임" />
-  <title>이슬로 베이비 버블 클린 🫧</title>
+  <title>계면이 퇴치 미션 🫧 이슬로 베이비</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -114,12 +114,16 @@
           <path d="M150 64 q10 18 -4 30" stroke="#7a5a44" stroke-width="7" fill="none" stroke-linecap="round" />
         </svg>
 
-        <!-- 계면이가 붙는 레이어 (JS가 동적으로 .gyemyeon 요소를 생성) -->
-        <div id="gyemyeon-layer" class="gyemyeon-layer"></div>
+        <!-- 로션 보호막 오버레이 (미션3에서 차오름) -->
+        <div id="skin-shield" class="skin-shield" aria-hidden="true"></div>
       </div>
 
       <!-- 이펙트 캔버스 (거품/물방울/물줄기/반짝이 파티클) -->
       <canvas id="fx-canvas" class="fx-canvas" aria-hidden="true"></canvas>
+
+      <!-- 계면이 레이어: 플레이필드 좌표계와 일치하도록 플레이필드 직속에 둠
+           (커서/충돌 좌표와 시각 위치를 동일 공간으로 맞춤) -->
+      <div id="gyemyeon-layer" class="gyemyeon-layer"></div>
 
       <!-- 드래그 중 따라다니는 도구(제품/샤워기/수건) -->
       <div id="tool-cursor" class="tool-cursor" aria-hidden="true"></div>
@@ -152,8 +156,8 @@
       =========================================================== -->
       <footer id="product-dock" class="product-dock">
         <img
-          src="assets/eslo-baby-bath-shampoo.png"
-          alt="이슬로 베이비 바스 앤 샴푸"
+          src="assets/products/eslo-baby-bath-shampoo.png"
+          alt="이슬로 베이비 제품"
           class="product-dock__img"
           id="product-img"
           draggable="false"
@@ -180,10 +184,10 @@
     <section id="screen-start" class="screen screen--start is-active" aria-label="시작 화면">
       <div class="screen__card">
         <div class="screen__emoji">🫧</div>
-        <h1 class="screen__title">계면이를 씻겨주세요!</h1>
+        <h1 class="screen__title">계면이 퇴치 미션</h1>
         <p class="screen__desc">
-          아기 몸에 <b>계면이</b>들이 달라붙었어요.<br />
-          <b>이슬로 베이비</b>로 깨끗하게 씻겨주세요!
+          아기 피부에 <b>장난꾸러기 계면이</b>가 달라붙었어요!<br />
+          <b>이슬로 베이비</b>로 나쁜 계면이를 모두 씻어내요!
         </p>
         <div class="start-buttons">
           <button id="btn-start-hand" class="btn btn--primary">✋ 손으로 플레이하기</button>
@@ -198,11 +202,14 @@
          성공 화면
     ============================================================= -->
     <section id="screen-success" class="screen screen--success" aria-label="성공 화면">
-      <div class="screen__card">
-        <div class="screen__emoji">✨✨✨</div>
-        <h1 class="screen__title">클린 완료!</h1>
+      <!-- 엔딩 파티클(컨페티/폭죽/별) 캔버스 -->
+      <canvas id="ending-canvas" class="ending-canvas" aria-hidden="true"></canvas>
+      <div class="screen__card screen__card--ending">
+        <img src="assets/enemy/best-gyemyeon-idle.png" class="ending-buddy" alt="행복해진 계면이" draggable="false" />
+        <div class="screen__emoji">🎉✨🎊</div>
+        <h1 class="screen__title">GOOD JOB!</h1>
         <p class="screen__desc">
-          아기를 깨끗하게 씻겨주셨네요!<br />
+          나쁜 계면이를 모두 씻어냈어요!<br />
           <b>이슬로 베이비</b>와 함께 <b>순하게 클린!</b>
         </p>
         <p class="screen__staff">📸 직원에게 화면을 보여주세요</p>
