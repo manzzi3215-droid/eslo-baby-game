@@ -53,11 +53,18 @@
         notice: $("cam-notice"),
         btnHand: $("btn-start-hand"),
         btnTouch: $("btn-start"),
+        collapse: $("cam-collapse"),
       };
 
       // "손으로 플레이하기" → 카메라/모델 준비 후 게임 시작
       if (this.els.btnHand) {
         this.els.btnHand.addEventListener("click", () => this.enable());
+      }
+      // 미리보기 접기/펴기 (모바일에서 화면 가림 최소화)
+      if (this.els.collapse) {
+        this.els.collapse.addEventListener("click", () => {
+          this.els.preview.classList.toggle("is-collapsed");
+        });
       }
       // "터치로 플레이하기"는 script.js가 이미 Game.start()에 바인딩되어 있음(그대로 fallback)
     },

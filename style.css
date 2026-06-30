@@ -519,10 +519,7 @@ img { -webkit-user-drag: none; user-drag: none; }
 @keyframes rotateHint { 0%,100% { transform: rotate(0);} 50% { transform: rotate(90deg);} }
 .orientation-hint__text { font-size: 22px; font-weight: 800; color: var(--c-ink); }
 
-/* 세로 + 좁은 화면(태블릿 세로/폰)에서만 안내 노출 */
-@media (orientation: portrait) and (max-width: 900px) {
-  .orientation-hint { display: flex; }
-}
+/* 세로 모드도 정식 지원하므로 회전 안내는 띄우지 않습니다(요소는 향후 확장용으로 유지). */
 
 /* =====================================================================
    손 인식(카메라) UI
@@ -675,3 +672,104 @@ img { -webkit-user-drag: none; user-drag: none; }
 }
 @keyframes buddyPop { from { transform: translateX(-50%) scale(0) translateY(40px); } to { transform: translateX(-50%) scale(1) translateY(0); } }
 @keyframes buddyBob { 0%, 100% { transform: translateX(-50%) translateY(0) rotate(-3deg); } 50% { transform: translateX(-50%) translateY(-8px) rotate(3deg); } }
+
+/* =====================================================================
+   카메라 미리보기 접기 버튼 (모바일에서 작게 접기/펴기)
+   ===================================================================== */
+.cam-preview { pointer-events: none; }          /* 미리보기는 터치를 가로채지 않음(터치 플레이 우선) */
+.cam-collapse {
+  position: absolute;
+  top: 4px; left: 4px;
+  z-index: 3;
+  width: 24px; height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;                          /* 버튼만 클릭 가능 */
+}
+.cam-preview.is-collapsed { width: 50px !important; height: 50px !important; aspect-ratio: 1; }
+.cam-preview.is-collapsed .cam-preview__video,
+.cam-preview.is-collapsed .cam-preview__label,
+.cam-preview.is-collapsed .cam-preview__dot { display: none; }
+.cam-preview.is-collapsed::after {
+  content: "📷";
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-size: 24px;
+}
+.cam-preview.is-collapsed .cam-collapse { transform: rotate(180deg); background: rgba(91,127,214,0.85); }
+
+/* =====================================================================
+   반응형 — 세로(Portrait) 레이아웃
+   PC/태블릿 가로 레이아웃은 건드리지 않고, 세로일 때만 재배치합니다.
+     · 아기: 중앙 상단   · 제품: 하단에 크게   · 카메라: 우상단 작게
+   ===================================================================== */
+@media (orientation: portrait) {
+  /* 아기를 중앙 상단으로 */
+  .baby-container {
+    top: 14%;
+    transform: translateX(-50%);
+    width: min(62vw, 40vh, 320px);
+  }
+
+  /* HUD 압축(겹침 방지) */
+  .hud { padding: 10px 10px; gap: 6px; }
+  .hud__item { padding: 6px 10px; border-radius: 16px; }
+  .hud__item--count, .hud__item--timer { flex: 0 0 auto; }
+
+  /* 제품을 하단에 크게 */
+  .product-dock { padding: 6px 0 16px; }
+  .product-dock__img { height: clamp(150px, 30vh, 280px); }
+  .product-dock__hint { font-size: clamp(12px, 1.9vh, 16px); }
+
+  /* 카메라 미리보기: 하단과 겹치지 않게 우상단(HUD 아래)으로 */
+  .cam-preview {
+    top: 78px; right: 8px; bottom: auto;
+    width: clamp(96px, 26vw, 124px);
+  }
+
+  /* 미션 토스트는 아기 아래쪽으로 살짝 내려 가독성 확보 */
+  .mission-toast { top: 46%; }
+}
+
+/* =====================================================================
+   반응형 — 작은 화면(스마트폰) 공통 보정
+   JS가 html.is-mobile 클래스를 함께 토글합니다(뷰포트 감지).
+   ===================================================================== */
+.is-mobile .hud__label { font-size: 10px; }
+.is-mobile .hud__value { font-size: 15px; }
+.is-mobile .hud__value b { font-size: 17px; }
+
+/* 계면이/도구를 화면에 맞게 축소 */
+.is-mobile .enemy { width: 54px; height: 54px; margin-left: -27px; margin-top: -27px; }
+.is-mobile .enemy--boss { width: 74px; height: 74px; margin-left: -37px; margin-top: -37px; }
+.is-mobile .tool-cursor { width: 84px; height: 84px; margin-left: -42px; margin-top: -42px; }
+
+/* 시작 화면: 모바일은 '터치로 플레이'를 위로 + 강조(터치 우선) */
+.is-mobile .start-buttons #btn-start {
+  order: -1;
+  background: linear-gradient(180deg, var(--c-brand), var(--c-brand-deep));
+  color: #fff;
+  box-shadow: var(--shadow-pop);
+  animation: btnBreath 2.2s ease-in-out infinite;
+}
+.is-mobile .start-buttons #btn-start-hand {
+  background: #fff;
+  color: var(--c-brand);
+  box-shadow: inset 0 0 0 3px var(--c-sky-2), var(--shadow-soft);
+  animation: none;
+}
+
+/* 아주 낮은 가로 화면(가로 모드 스마트폰)에서 제품/아기 축소 */
+@media (orientation: landscape) and (max-height: 460px) {
+  .baby-container { width: min(40vh, 240px); top: 50%; transform: translate(-50%, -46%); }
+  .product-dock__img { height: clamp(80px, 22vh, 130px); }
+  .cam-preview { width: clamp(96px, 16vw, 130px); }
+}

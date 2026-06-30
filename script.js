@@ -113,6 +113,46 @@
   const pick = (arr) => arr[(Math.random() * arr.length) | 0];
   const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
 
+  /* ---- 모바일 난이도 자동 완화 ----
+   * 기준값(태블릿/PC)을 스냅샷해 두고, 작은 화면에서는 매 플레이 시작 시 완화합니다.
+   * (시간 ↑ · 계면이 체력/수 ↓ · 씻기 속도 ↑ · 도망 ↓) */
+  const DIFF_BASE = {
+    GAME_DURATION_SEC: CONFIG.GAME_DURATION_SEC,
+    ENEMY_HEALTH: CONFIG.ENEMY_HEALTH,
+    BOSS_HEALTH: CONFIG.BOSS_HEALTH,
+    WASH_RATE: CONFIG.WASH_RATE,
+    FLEE_RADIUS: CONFIG.FLEE_RADIUS,
+    FLEE_SPEED: CONFIG.FLEE_SPEED,
+    CRAWL_SPEED: CONFIG.CRAWL_SPEED,
+    SHIELD_RATE: CONFIG.SHIELD_RATE,
+    counts: CONFIG.MISSIONS.map((m) => m.count),
+  };
+  function applyDifficulty(isMobile) {
+    // 항상 기준값으로 복원(기기 전환/회전 대비)
+    CONFIG.GAME_DURATION_SEC = DIFF_BASE.GAME_DURATION_SEC;
+    CONFIG.ENEMY_HEALTH = DIFF_BASE.ENEMY_HEALTH;
+    CONFIG.BOSS_HEALTH = DIFF_BASE.BOSS_HEALTH;
+    CONFIG.WASH_RATE = DIFF_BASE.WASH_RATE;
+    CONFIG.FLEE_RADIUS = DIFF_BASE.FLEE_RADIUS;
+    CONFIG.FLEE_SPEED = DIFF_BASE.FLEE_SPEED;
+    CONFIG.CRAWL_SPEED = DIFF_BASE.CRAWL_SPEED;
+    CONFIG.SHIELD_RATE = DIFF_BASE.SHIELD_RATE;
+    CONFIG.MISSIONS.forEach((m, i) => { m.count = DIFF_BASE.counts[i]; });
+    if (isMobile) {
+      CONFIG.GAME_DURATION_SEC = 80;
+      CONFIG.ENEMY_HEALTH = Math.round(DIFF_BASE.ENEMY_HEALTH * 0.8);
+      CONFIG.BOSS_HEALTH = Math.round(DIFF_BASE.BOSS_HEALTH * 0.8);
+      CONFIG.WASH_RATE = Math.round(DIFF_BASE.WASH_RATE * 1.25);
+      CONFIG.FLEE_RADIUS = 66;
+      CONFIG.FLEE_SPEED = 105;
+      CONFIG.CRAWL_SPEED = 28;
+      CONFIG.SHIELD_RATE = 0.62;
+      CONFIG.MISSIONS[0].count = 4;
+      CONFIG.MISSIONS[1].count = 3;
+      CONFIG.MISSIONS[2].count = 4;
+    }
+  }
+
   /* ===================================================================
    * 3) AudioManager (파일 없으면 조용히 무시)
    * =================================================================== */
@@ -618,6 +658,19 @@
     repelledCount: 0,
     bodyBoundsPx: { x0: 0, y0: 0, x1: 0, y1: 0 },
     _endingT: 0,
+    isMobile: false,
+    isPortrait: false,
+
+    /** 화면 크기/방향 감지 → html 클래스 토글(CSS 반응형) + 모바일 여부 판정 */
+    detectDevice() {
+      const w = window.innerWidth, h = window.innerHeight;
+      this.isPortrait = h >= w;
+      this.isMobile = Math.min(w, h) <= 560;   // 스마트폰급 작은 화면
+      const cl = document.documentElement.classList;
+      cl.toggle("is-portrait", this.isPortrait);
+      cl.toggle("is-landscape", !this.isPortrait);
+      cl.toggle("is-mobile", this.isMobile);
+    },
 
     init() {
       const $ = (id) => document.getElementById(id);
@@ -657,7 +710,12 @@
         up: () => this.onUp(),
       });
 
-      window.addEventListener("resize", () => this.resize());
+      window.addEventListener("resize", () => { this.detectDevice(); this.resize(); });
+      // 모바일 회전: iOS는 회전 직후 크기 보고가 늦어 약간 지연 후 재측정
+      window.addEventListener("orientationchange", () => {
+        setTimeout(() => { this.detectDevice(); this.resize(); }, 250);
+      });
+      this.detectDevice();
       this.resize();
 
       $("btn-start").addEventListener("click", () => this.start());
@@ -703,6 +761,10 @@
     /* ---------------- 시작/리셋 ---------------- */
     start() {
       AudioManager.unlock();
+      // 기기 감지 후 난이도 적용(모바일 자동 완화) — timeLeft 설정 전에 수행
+      this.detectDevice();
+      applyDifficulty(this.isMobile);
+
       this.fields.screenStart.classList.remove("is-active");
       this.fields.screenSuccess.classList.remove("is-active");
       this.fields.screenFail.classList.remove("is-active");
